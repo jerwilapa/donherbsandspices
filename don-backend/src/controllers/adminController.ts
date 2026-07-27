@@ -1,0 +1,257 @@
+import { Request, Response } from "express";
+import { db } from "../config/db";
+
+const resolveStatusValue = async (conn: any, statusCode: string) => {
+  try {
+    const [rows]: any = await conn.query(
+      "SELECT id FROM order_status WHERE code = ? OR name = ? LIMIT 1",
+      [statusCode, statusCode],
+    );
+
+    if (rows.length > 0) return rows[0].id;
+  } catch (_err) {
+    // ignore and fall back to literal
+  }
+
+  return statusCode;
+};
+
+export const getOrdersAdmin = async (req: Request, res: Response) => {
+  try {
+    const [rows]: any = await db.query(
+      `SELECT o.id, o.user_id, o.total, o.delivery_method, o.created_at,
+              MAX(COALESCE(os.name, o.status)) AS status,
+              COUNT(oi.id) AS itemCount
+         FROM orders o
+         LEFT JOIN order_status os ON os.id = o.status OR os.code = o.status OR os.name = o.status
+         LEFT JOIN order_items oi ON oi.order_id = o.id
+        GROUP BY o.id
+        ORDER BY o.created_at DESC`,
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Admin get orders error", error);
+    res.status(500).json({ message: "Unable to fetch orders", error });
+  }
+};
+
+export const updateOrderStatus = async (req: Request, res: Response) => {
+  const { orderId } = req.params;
+  const { status } = req.body;
+
+  if (!status) {
+    return res.status(400).json({ message: "Status is required" });
+  }
+
+  try {
+    // If order_status table exists, try to resolve provided status (name/code) to its id
+    let statusToSet: any = status;
+    try {
+      const resolved = await resolveStatusValue(db, status);
+      statusToSet = resolved;
+    } catch (_e) {
+      // ignore and use literal value
+    }
+
+    await db.query("UPDATE orders SET status = ? WHERE id = ?", [
+      statusToSet,
+      orderId,
+    ]);
+    res.json({ message: "Order status updated" });
+  } catch (error) {
+    console.error("Admin update order status error", error);
+    res.status(500).json({ message: "Unable to update order status", error });
+  }
+};
+
+export const getProductsAdmin = async (req: Request, res: Response) => {
+  try {
+    const [rows]: any = await db.query(
+      "SELECT * FROM products ORDER BY id DESC",
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error("Admin get products error", error);
+    res.status(500).json({ message: "Unable to fetch products", error });
+  }
+};
+
+export const createProduct = async (req: any, res: Response) => {
+  const { name, price, stock, category_id } = req.body;
+
+  if (!name || price === undefined) {
+    return res.status(400).json({ message: "Name and price are required" });
+  }
+
+  try {
+    if (
+      category_id !== null &&
+      category_id !== undefined &&
+      category_id !== ""
+    ) {
+      const [categoryRows]: any = await db.query(
+        "SELECT id FROM categories WHERE id = ?",
+        [category_id],
+      );
+
+      if (categoryRows.length === 0) {
+        return res.status(400).json({ message: "Category not found" });
+      }
+    }
+
+    // ✅ FIX: get uploaded file
+    const imageUrl = req.file ? `/uploads/products/${req.file.filename}` : "";
+
+    const [result]: any = await db.query(
+      "INSERT INTO products (name, price, stock, image, category_id) VALUES (?, ?, ?, ?, ?)",
+      [name, price, stock || 0, imageUrl, category_id || null],
+    );
+
+    res.status(201).json({
+      message: "Product created",
+      id: result.insertId,
+      image: imageUrl,
+    });
+  } catch (error) {
+    console.error("Admin create product error", error);
+    res.status(500).json({ message: "Unable to create product", error });
+  }
+};
+
+export const updateProduct = async (req: any, res: Response) => {
+  const { productId } = req.params;
+
+  try {
+    const { name, price, stock, category_id } = req.body;
+
+    if (!name || price === undefined) {
+      return res.status(400).json({ message: "Name and price are required" });
+    }
+
+    if (
+      category_id !== null &&
+      category_id !== undefined &&
+      category_id !== ""
+    ) {
+      const [categoryRows]: any = await db.query(
+        "SELECT id FROM categories WHERE id = ?",
+        [category_id],
+      );
+
+      if (categoryRows.length === 0) {
+        return res.status(400).json({ message: "Category not found" });
+      }
+    }
+
+    // 🔥 FIX: always ensure safe image value
+    let imageUrl = null;
+
+    if (req.file) {
+      imageUrl = `/uploads/products/${req.file.filename}`;
+    }
+
+    // fallback to existing image from DB
+    if (!imageUrl) {
+      const [rows]: any = await db.query(
+        "SELECT image FROM products WHERE id = ?",
+        [productId],
+      );
+
+      imageUrl = rows?.[0]?.image || "";
+    }
+
+    await db.query(
+      `UPDATE products 
+       SET name = ?, price = ?, stock = ?, image = ?, category_id = ? 
+       WHERE id = ?`,
+      [name, price, stock, imageUrl, category_id || null, productId],
+    );
+
+    res.json({ message: "Product updated" });
+  } catch (error) {
+    console.error("Admin update product error", error);
+    res.status(500).json({ message: "Unable to update product", error });
+  }
+};
+
+export const deleteProduct = async (req: Request, res: Response) => {
+  const { productId } = req.params;
+
+  try {
+    // delete dependent rows first
+    await db.query("DELETE FROM order_items WHERE product_id = ?", [productId]);
+
+    await db.query("DELETE FROM products WHERE id = ?", [productId]);
+
+    res.json({ message: "Product deleted" });
+  } catch (error) {
+    console.error("Admin delete product error", error);
+    res.status(500).json({
+      message: "Unable to delete product",
+      error,
+    });
+  }
+};
+
+export const getCategoriesAdmin = async (req: Request, res: Response) => {
+  try {
+    const [rows]: any = await db.query(
+      "SELECT * FROM categories ORDER BY id DESC",
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error("Admin get categories error", error);
+    res.status(500).json({ message: "Unable to fetch categories", error });
+  }
+};
+
+export const createCategory = async (req: Request, res: Response) => {
+  const { name, image } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ message: "Name is required" });
+  }
+
+  try {
+    const [result]: any = await db.query(
+      "INSERT INTO categories (name, image) VALUES (?, ?)",
+      [name, image || ""],
+    );
+
+    res.status(201).json({ message: "Category created", id: result.insertId });
+  } catch (error) {
+    console.error("Admin create category error", error);
+    res.status(500).json({ message: "Unable to create category", error });
+  }
+};
+
+export const updateCategory = async (req: Request, res: Response) => {
+  const { categoryId } = req.params;
+  const { name, image } = req.body;
+
+  try {
+    await db.query("UPDATE categories SET name = ?, image = ? WHERE id = ?", [
+      name,
+      image,
+      categoryId,
+    ]);
+
+    res.json({ message: "Category updated" });
+  } catch (error) {
+    console.error("Admin update category error", error);
+    res.status(500).json({ message: "Unable to update category", error });
+  }
+};
+
+export const deleteCategory = async (req: Request, res: Response) => {
+  const { categoryId } = req.params;
+
+  try {
+    await db.query("DELETE FROM categories WHERE id = ?", [categoryId]);
+    res.json({ message: "Category deleted" });
+  } catch (error) {
+    console.error("Admin delete category error", error);
+    res.status(500).json({ message: "Unable to delete category", error });
+  }
+};
