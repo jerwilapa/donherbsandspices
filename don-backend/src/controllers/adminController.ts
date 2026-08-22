@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { db } from "../config/db";
+import { notifyUserById } from "../utils/firebase";
 
 const resolveStatusValue = async (conn: any, statusCode: string) => {
   try {
@@ -58,6 +59,30 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       statusToSet,
       orderId,
     ]);
+
+    try {
+      const [orderRows]: any = await db.query(
+        "SELECT user_id FROM orders WHERE id = ?",
+        [orderId],
+      );
+      const userId = orderRows?.[0]?.user_id;
+
+      if (userId) {
+        await notifyUserById({
+          userId,
+          title: "Order status updated",
+          body: `Your order #${orderId} is now ${status}.`,
+          data: {
+            type: "order_status",
+            orderId: String(orderId),
+            status: String(status),
+          },
+        });
+      }
+    } catch (notifyError) {
+      console.error("Order status notification failed", notifyError);
+    }
+
     res.json({ message: "Order status updated" });
   } catch (error) {
     console.error("Admin update order status error", error);

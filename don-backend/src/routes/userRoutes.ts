@@ -1,6 +1,7 @@
 import express from "express";
 import { verifyToken } from "../middleware/authMiddleware";
 import { db } from "../config/db";
+import { saveFcmToken } from "../controllers/authController";
 
 const router = express.Router();
 
@@ -22,5 +23,7 @@ router.get("/me", verifyToken, async (req: any, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+router.post("/me/fcm-token", verifyToken, saveFcmToken);
 
 export default router;

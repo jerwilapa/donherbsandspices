@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getOrders = exports.placeOrder = void 0;
 const db_1 = require("../config/db");
 const email_1 = require("../utils/email");
+const firebase_1 = require("../utils/firebase");
 const getStatusValue = async (conn, statusCode) => {
     try {
         const [rows] = await conn.query("SELECT id FROM order_status WHERE code = ? OR name = ? LIMIT 1", [statusCode, statusCode]);
@@ -108,6 +109,21 @@ const placeOrder = async (req, res) => {
         }
         catch (emailErr) {
             console.error("Order email notification failed", emailErr);
+        }
+        try {
+            await (0, firebase_1.notifyUserById)({
+                userId,
+                title: "Order placed",
+                body: `Your order #${orderId} has been placed successfully.`,
+                data: {
+                    type: "order_placed",
+                    orderId: String(orderId),
+                    total: String(total || 0),
+                },
+            });
+        }
+        catch (pushErr) {
+            console.error("Order push notification failed", pushErr);
         }
         res.json({ message: "Order placed", orderId });
     }

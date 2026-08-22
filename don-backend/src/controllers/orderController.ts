@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { db } from "../config/db";
 import { sendOrderPlacedEmail } from "../utils/email";
+import { notifyUserById } from "../utils/firebase";
 
 const getStatusValue = async (conn: any, statusCode: string) => {
   try {
@@ -146,6 +147,21 @@ export const placeOrder = async (req: Request, res: Response) => {
       });
     } catch (emailErr) {
       console.error("Order email notification failed", emailErr);
+    }
+
+    try {
+      await notifyUserById({
+        userId,
+        title: "Order placed",
+        body: `Your order #${orderId} has been placed successfully.`,
+        data: {
+          type: "order_placed",
+          orderId: String(orderId),
+          total: String(total || 0),
+        },
+      });
+    } catch (pushErr) {
+      console.error("Order push notification failed", pushErr);
     }
 
     res.json({ message: "Order placed", orderId });

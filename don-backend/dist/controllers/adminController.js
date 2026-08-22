@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteCategory = exports.updateCategory = exports.createCategory = exports.getCategoriesAdmin = exports.deleteProduct = exports.updateProduct = exports.createProduct = exports.getProductsAdmin = exports.updateOrderStatus = exports.getOrdersAdmin = void 0;
 const db_1 = require("../config/db");
+const firebase_1 = require("../utils/firebase");
 const resolveStatusValue = async (conn, statusCode) => {
     try {
         const [rows] = await conn.query("SELECT id FROM order_status WHERE code = ? OR name = ? LIMIT 1", [statusCode, statusCode]);
@@ -51,6 +52,25 @@ const updateOrderStatus = async (req, res) => {
             statusToSet,
             orderId,
         ]);
+        try {
+            const [orderRows] = await db_1.db.query("SELECT user_id FROM orders WHERE id = ?", [orderId]);
+            const userId = orderRows?.[0]?.user_id;
+            if (userId) {
+                await (0, firebase_1.notifyUserById)({
+                    userId,
+                    title: "Order status updated",
+                    body: `Your order #${orderId} is now ${status}.`,
+                    data: {
+                        type: "order_status",
+                        orderId: String(orderId),
+                        status: String(status),
+                    },
+                });
+            }
+        }
+        catch (notifyError) {
+            console.error("Order status notification failed", notifyError);
+        }
         res.json({ message: "Order status updated" });
     }
     catch (error) {

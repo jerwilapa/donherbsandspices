@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const db_1 = require("../config/db");
+const authController_1 = require("../controllers/authController");
 const router = express_1.default.Router();
 router.get("/me", authMiddleware_1.verifyToken, async (req, res) => {
     try {
@@ -21,5 +22,6 @@ router.get("/me", authMiddleware_1.verifyToken, async (req, res) => {
         res.status(500).json({ message: "Server error" });
     }
 });
+router.post("/me/fcm-token", authMiddleware_1.verifyToken, authController_1.saveFcmToken);
 exports.default = router;
 //# sourceMappingURL=userRoutes.js.map

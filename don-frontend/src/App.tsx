@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
+import { requestFirebasePermission, listenForForegroundMessages } from "./firebase";
+import { showToast } from "./helper/showToast";
 import Home from "./pages/Home/Home";
 import Products from "./pages/Products/Products";
 import Orders from "./pages/Orders/Orders";
@@ -27,9 +29,19 @@ function App() {
 
         console.log("LOGGED IN USER:", res.data.user);
 
-        // optional: store fresh user data
         localStorage.setItem("user", JSON.stringify(res.data.user));
 
+        if (typeof window !== "undefined" && "Notification" in window) {
+          const token = await requestFirebasePermission();
+
+          if (token) {
+            try {
+              await api.post("/users/me/fcm-token", { token });
+            } catch (saveErr) {
+              console.warn("Unable to save FCM token", saveErr);
+            }
+          }
+        }
       } catch (err) {
         console.log("No valid session");
         localStorage.removeItem("token");
@@ -38,6 +50,16 @@ function App() {
     };
 
     loadUser();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = listenForForegroundMessages((payload) => {
+      const title = payload?.notification?.title || "DON notification";
+      const body = payload?.notification?.body || "You have a new update.";
+      showToast("success", `${title}: ${body}`);
+    });
+
+    return () => unsubscribe && unsubscribe();
   }, []);
 
   return (
