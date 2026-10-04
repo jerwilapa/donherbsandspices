@@ -2,12 +2,14 @@ import express from "express";
 import { verifyToken, verifyAdmin } from "../middleware/authMiddleware";
 import {
   getOrdersAdmin,
+  getAdminOrderDetails,
   updateOrderStatus,
   getProductsAdmin,
   createProduct,
   updateProduct,
   deleteProduct,
   getCategoriesAdmin,
+  getAdminCustomers,
   createCategory,
   updateCategory,
   deleteCategory,
@@ -19,6 +21,8 @@ const router = express.Router();
 router.use(verifyToken, verifyAdmin);
 
 router.get("/orders", getOrdersAdmin);
+router.get("/orders/:orderId", getAdminOrderDetails);
+router.get("/customers", getAdminCustomers);
 router.put("/orders/:orderId/status", updateOrderStatus);
 
 /* CREATE */

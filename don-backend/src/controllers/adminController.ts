@@ -20,13 +20,15 @@ const resolveStatusValue = async (conn: any, statusCode: string) => {
 export const getOrdersAdmin = async (req: Request, res: Response) => {
   try {
     const [rows]: any = await db.query(
-      `SELECT o.id, o.user_id, o.total, o.delivery_method, o.created_at,
+            `SELECT o.id, o.user_id, u.fullname AS customer_name, u.email AS customer_email,
+              o.total, o.delivery_method, o.created_at,
               MAX(COALESCE(os.name, o.status)) AS status,
               COUNT(oi.id) AS itemCount
          FROM orders o
+         LEFT JOIN users u ON u.id = o.user_id
          LEFT JOIN order_status os ON os.id = o.status OR os.code = o.status OR os.name = o.status
          LEFT JOIN order_items oi ON oi.order_id = o.id
-        GROUP BY o.id
+        GROUP BY o.id, o.user_id, u.fullname, u.email, o.total, o.delivery_method, o.created_at
         ORDER BY o.created_at DESC`,
     );
 
@@ -34,6 +36,51 @@ export const getOrdersAdmin = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Admin get orders error", error);
     res.status(500).json({ message: "Unable to fetch orders", error });
+  }
+};
+
+export const getAdminOrderDetails = async (req: Request, res: Response) => {
+  const { orderId } = req.params;
+
+  try {
+    const [orderRows]: any = await db.query(
+      `SELECT o.id, o.user_id, u.fullname AS customer_name, u.email AS customer_email,
+              o.total, o.delivery_method, o.created_at,
+              COALESCE(
+                (SELECT os.name FROM order_status os
+                  WHERE os.id = o.status OR os.code = o.status OR os.name = o.status
+                  LIMIT 1),
+                o.status
+              ) AS status,
+              oa.full_name, oa.phone, oa.address_line, oa.province, oa.municipality,
+              oa.barangay, oa.postal_code, oa.country
+         FROM orders o
+         JOIN users u ON u.id = o.user_id
+         LEFT JOIN order_addresses oa ON oa.order_id = o.id
+        WHERE o.id = ?
+        LIMIT 1`,
+      [orderId],
+    );
+
+    if (!orderRows.length) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    const [items]: any = await db.query(
+      `SELECT oi.id, oi.product_id,
+              COALESCE(p.name, CONCAT('Product #', oi.product_id)) AS product_name,
+              oi.quantity, oi.price
+         FROM order_items oi
+         LEFT JOIN products p ON p.id = oi.product_id
+        WHERE oi.order_id = ?
+        ORDER BY oi.id`,
+      [orderId],
+    );
+
+    return res.json({ ...orderRows[0], items });
+  } catch (error) {
+    console.error("Admin get order details error", error);
+    return res.status(500).json({ message: "Unable to fetch order details", error });
   }
 };
 
@@ -278,5 +325,25 @@ export const deleteCategory = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Admin delete category error", error);
     res.status(500).json({ message: "Unable to delete category", error });
+  }
+};
+
+export const getAdminCustomers = async (_req: Request, res: Response) => {
+  try {
+    const [rows]: any = await db.query(
+      `SELECT u.id, u.fullname, u.email, u.created_at,
+              COUNT(DISTINCT o.id) AS orderCount,
+              COALESCE(SUM(o.total), 0) AS lifetimeValue
+         FROM users u
+         LEFT JOIN orders o ON o.user_id = u.id
+        WHERE u.role = 'customer'
+        GROUP BY u.id, u.fullname, u.email, u.created_at
+        ORDER BY u.created_at DESC, u.id DESC`,
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Admin get customers error", error);
+    res.status(500).json({ message: "Unable to fetch customers", error });
   }
 };

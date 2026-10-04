@@ -117,6 +117,21 @@ INSERT INTO order_status (code, name) VALUES
   ('shipped', 'shipped'),
   ('delivered', 'delivered'),
   ('cancelled', 'cancelled')
+  CREATE TABLE IF NOT EXISTS order_addresses (
+    order_id INT UNSIGNED NOT NULL,
+    full_name VARCHAR(150) NOT NULL,
+    phone VARCHAR(40) NOT NULL,
+    address_line VARCHAR(255) NOT NULL,
+    province VARCHAR(120) NOT NULL DEFAULT '',
+    municipality VARCHAR(120) NOT NULL DEFAULT '',
+    barangay VARCHAR(120) NOT NULL DEFAULT '',
+    postal_code VARCHAR(20) NOT NULL DEFAULT '',
+    country VARCHAR(100) NOT NULL DEFAULT 'Philippines',
+    PRIMARY KEY (order_id),
+    CONSTRAINT fk_order_addresses_order
+      FOREIGN KEY (order_id) REFERENCES orders (id)
+      ON DELETE CASCADE ON UPDATE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ON DUPLICATE KEY UPDATE name = VALUES(name);
 
 CREATE TABLE IF NOT EXISTS orders (

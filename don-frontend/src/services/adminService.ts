@@ -5,6 +5,16 @@ export const getAdminOrders = async () => {
   return res.data;
 };
 
+export const getAdminOrderDetails = async (orderId: number) => {
+  const res = await api.get(`/admin/orders/${orderId}`);
+  return res.data;
+};
+
+export const getAdminCustomers = async () => {
+  const res = await api.get("/admin/customers");
+  return res.data;
+};
+
 export const updateOrderStatus = async (orderId: number, status: string) => {
   const res = await api.put(`/admin/orders/${orderId}/status`, { status });
   return res.data;
@@ -37,6 +47,11 @@ export const getAdminCategories = async () => {
 
 export const createCategory = async (payload: any) => {
   const res = await api.post("/admin/categories", payload);
+  return res.data;
+};
+
+export const updateCategory = async (categoryId: number, payload: any) => {
+  const res = await api.put(`/admin/categories/${categoryId}`, payload);
   return res.data;
 };
 

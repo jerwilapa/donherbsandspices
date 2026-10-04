@@ -12,6 +12,8 @@ import AdminDashboard from "./pages/Admin/AdminDashboard";
 import AdminOrders from "./pages/Admin/AdminOrders";
 import AdminProducts from "./pages/Admin/AdminProducts";
 import AdminCategories from "./pages/Admin/AdminCategories";
+import AdminCustomers from "./pages/Admin/AdminCustomers";
+import AdminLayout from "./pages/Admin/AdminLayout";
 
 import ProtectedRoute from "./routes/ProtectedRoute";
 import AdminRoute from "./routes/AdminRoute";
@@ -117,42 +119,16 @@ function App() {
           path="/admin"
           element={
             <AdminRoute>
-              <Layout>
-                <AdminDashboard />
-              </Layout>
+              <AdminLayout />
             </AdminRoute>
           }
-        />
-        <Route
-          path="/admin/orders"
-          element={
-            <AdminRoute>
-              <Layout>
-                <AdminOrders />
-              </Layout>
-            </AdminRoute>
-          }
-        />
-        <Route
-          path="/admin/products"
-          element={
-            <AdminRoute>
-              <Layout>
-                <AdminProducts />
-              </Layout>
-            </AdminRoute>
-          }
-        />
-        <Route
-          path="/admin/categories"
-          element={
-            <AdminRoute>
-              <Layout>
-                <AdminCategories />
-              </Layout>
-            </AdminRoute>
-          }
-        />
+        >
+          <Route index element={<AdminDashboard />} />
+          <Route path="orders" element={<AdminOrders />} />
+          <Route path="customers" element={<AdminCustomers />} />
+          <Route path="products" element={<AdminProducts />} />
+          <Route path="categories" element={<AdminCategories />} />
+        </Route>
 
       </Routes>
     </BrowserRouter>

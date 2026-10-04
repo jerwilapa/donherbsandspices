@@ -32,6 +32,9 @@ export const placeOrder = async (req: Request, res: Response) => {
   if (!userId || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ message: "Invalid order payload" });
   }
+  if (!address?.fullName || !address?.phone || !address?.addressLine) {
+    return res.status(400).json({ message: "A complete delivery address is required" });
+  }
 
   let conn: any;
 
@@ -97,6 +100,23 @@ export const placeOrder = async (req: Request, res: Response) => {
         throw insertErr;
       }
     }
+
+    await conn.query(
+      `INSERT INTO order_addresses
+        (order_id, full_name, phone, address_line, province, municipality, barangay, postal_code, country)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        orderId,
+        address.fullName,
+        address.phone,
+        address.addressLine,
+        address.province || "",
+        address.municipality || "",
+        address.barangay || "",
+        address.postal || address.postalCode || "",
+        address.country || "Philippines",
+      ],
+    );
 
     // Insert order items and reduce stock
     for (const it of items) {
