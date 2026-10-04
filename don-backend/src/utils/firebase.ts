@@ -1,4 +1,5 @@
-import admin from "firebase-admin";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getMessaging } from "firebase-admin/messaging";
 import { db } from "../config/db";
 
 const getServiceAccount = () => {
@@ -14,7 +15,7 @@ const getServiceAccount = () => {
 };
 
 const ensureFirebaseApp = () => {
-  if (admin.apps.length > 0) return;
+  if (getApps().length > 0) return;
 
   const serviceAccount = getServiceAccount();
   const hasProjectConfig = !!(
@@ -23,14 +24,14 @@ const ensureFirebaseApp = () => {
   );
 
   if (serviceAccount) {
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+    initializeApp({
+      credential: cert(serviceAccount),
     });
     return;
   }
 
   if (hasProjectConfig) {
-    admin.initializeApp();
+    initializeApp();
     return;
   }
 
@@ -64,7 +65,7 @@ export const sendFirebaseNotificationToToken = async ({
 
   ensureFirebaseApp();
 
-  if (admin.apps.length === 0) {
+  if (getApps().length === 0) {
     return { ok: false, reason: "firebase-not-configured" };
   }
 
@@ -90,7 +91,7 @@ export const sendFirebaseNotificationToToken = async ({
       message.data = normalizedData;
     }
 
-    await admin.messaging().send(message);
+    await getMessaging().send(message);
 
     return { ok: true };
   } catch (error) {

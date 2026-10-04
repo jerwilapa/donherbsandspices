@@ -10,10 +10,22 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-const app = initializeApp(firebaseConfig);
-export const messaging = getMessaging(app);
+const hasMessagingConfig = Boolean(
+  firebaseConfig.apiKey &&
+    firebaseConfig.projectId &&
+    firebaseConfig.messagingSenderId &&
+    firebaseConfig.appId,
+);
+
+export const messaging = hasMessagingConfig
+  ? getMessaging(initializeApp(firebaseConfig))
+  : null;
 
 export const requestFirebasePermission = async () => {
+  if (!messaging) {
+    return null;
+  }
+
   try {
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
@@ -34,6 +46,10 @@ export const requestFirebasePermission = async () => {
 export const listenForForegroundMessages = (
   callback: (payload: any) => void,
 ) => {
+  if (!messaging) {
+    return () => {};
+  }
+
   return onMessage(messaging, (payload) => {
     callback(payload);
   });

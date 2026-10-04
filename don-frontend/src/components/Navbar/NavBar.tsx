@@ -9,10 +9,8 @@ import {
 
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import LoginIcon from "@mui/icons-material/Login";
-import LogoutIcon from "@mui/icons-material/Logout";
-import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import Badge from "@mui/material/Badge";
+import { MdLogin, MdLogout, MdShoppingCart } from "react-icons/md";
 import { useCart } from "../../hooks/useCart";
 
 const Navbar = () => {
@@ -153,7 +151,7 @@ const Navbar = () => {
                     {!isAdmin && (
                         <IconButton component={Link} to="/cart">
                             <Badge badgeContent={count} color="error">
-                                <ShoppingCartIcon />
+                                <MdShoppingCart />
                             </Badge>
                         </IconButton>
                     )}
@@ -173,7 +171,7 @@ const Navbar = () => {
 
                             <Button
                                 onClick={handleLogout}
-                                startIcon={<LogoutIcon />}
+                                startIcon={<MdLogout />}
                                 sx={{
                                     borderColor: "#111",
                                     color: "#111",
@@ -201,7 +199,7 @@ const Navbar = () => {
                         <Button
                             component={Link}
                             to="/login"
-                            startIcon={<LoginIcon />}
+                            startIcon={<MdLogin />}
                             sx={{
                                 borderColor: "#111",
                                 color: "#111",
