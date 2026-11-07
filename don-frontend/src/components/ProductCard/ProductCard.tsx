@@ -21,6 +21,7 @@ import {
 } from "react-icons/md";
 
 import { useEffect, useState } from "react";
+import { getProductDescription } from "../../utils/productDescription";
 
 type ProductVariant = {
     productId: number;
@@ -333,14 +334,47 @@ const ProductCard = ({
             </Snackbar>
             <Dialog open={open} onClose={() => setOpen(false)} fullWidth>
                 <Box p={3}>
-                    <Typography variant="h6">{name}</Typography>
-                    <img src={selectedVariant.image} width="100%" alt={name} />
-                    <Typography>{selectedVariant.size}</Typography>
-                    <Typography>
-                        ₱{Number(selectedVariant.price).toLocaleString("en-PH", {
+                    <Typography variant="h6" fontWeight={700} mb={2}>{name}</Typography>
+                    <Box
+                        sx={{
+                            overflow: "hidden",
+                            borderRadius: 2,
+                            cursor: "zoom-in",
+                            "&:hover img": {
+                                transform: "scale(1.5)",
+                            },
+                            "@media (prefers-reduced-motion: reduce)": {
+                                "& img": { transition: "none" },
+                            },
+                        }}
+                    >
+                        <Box
+                            component="img"
+                            src={selectedVariant.image}
+                            alt={name}
+                            sx={{
+                                display: "block",
+                                width: "100%",
+                                maxHeight: 420,
+                                objectFit: "contain",
+                                transition: "transform 300ms ease",
+                            }}
+                        />
+                    </Box>
+                    <Typography variant="caption" color="text.secondary">
+                        Hover over the image to zoom in
+                    </Typography>
+                    <Typography variant="subtitle1" fontWeight={600} mt={2}>
+                        {selectedVariant.size} · ₱{Number(selectedVariant.price).toLocaleString("en-PH", {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                         })}
+                    </Typography>
+                    <Typography variant="subtitle2" fontWeight={700} mt={2}>
+                        Best for
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" mt={0.5}>
+                        {getProductDescription(name)}
                     </Typography>
                 </Box>
             </Dialog>
