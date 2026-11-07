@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getAdminOrders, getAdminProducts, getAdminCategories, getAdminCustomers } from "../../services/adminService";
 import { MdArrowForward, MdCategory, MdInventory2, MdPayments, MdPeople, MdRefresh, MdShoppingBag, MdWarningAmber } from "react-icons/md";
+import { groupCatalogProducts } from "../../utils/productCatalog";
 
 type MetricProps = { label: string; value: string | number; note: string; icon: React.ReactNode; accent: string };
 
@@ -36,6 +37,7 @@ const AdminDashboard = () => {
     const loading = loadingOrders || loadingProducts || loadingCategories || loadingCustomers;
     const recentOrders = Array.isArray(orders) ? orders.slice(0, 6) : [];
     const safeProducts = Array.isArray(products) ? products : [];
+    const catalogProducts = groupCatalogProducts(safeProducts);
     const safeCategories = Array.isArray(categories) ? categories : [];
     const safeOrders = Array.isArray(orders) ? orders : [];
     const pendingOrders = safeOrders.filter((order: any) => !["delivered", "cancelled"].includes(String(order.status).toLowerCase())).length;
@@ -57,7 +59,7 @@ const AdminDashboard = () => {
                     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", xl: "repeat(5, 1fr)" }, gap: 1.5 }}>
                         <Metric label="Gross order value" value={`₱${revenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} note={`${safeOrders.length} orders recorded`} icon={<MdPayments />} accent="#37805a" />
                         <Metric label="Orders to process" value={pendingOrders} note="Open or in transit" icon={<MdShoppingBag />} accent="#bd7526" />
-                        <Metric label="Active products" value={safeProducts.length} note={`${lowStock.length} at or below 5 units`} icon={<MdInventory2 />} accent="#477e87" />
+                        <Metric label="Active products" value={catalogProducts.length} note={`${safeProducts.length} pack sizes · ${lowStock.length} at or below 5 units`} icon={<MdInventory2 />} accent="#477e87" />
                         <Metric label="Categories" value={safeCategories.length} note="Product groups" icon={<MdCategory />} accent="#9a6447" />
                         <Metric label="Customers" value={customers.length} note="Registered shoppers" icon={<MdPeople />} accent="#637546" />
                     </Box>
@@ -66,7 +68,7 @@ const AdminDashboard = () => {
                         <Paper variant="outlined" sx={{ borderRadius: "8px", borderColor: "#ead6b5", bgcolor: "#fffaf1", p: 1.75 }}>
                             <Stack direction="row" alignItems="center" spacing={1.25}>
                                 <Box sx={{ color: "#a76517", display: "flex", fontSize: 20 }}><MdWarningAmber /></Box>
-                                <Typography variant="body2" fontWeight={650}>{lowStock.length} product{lowStock.length === 1 ? "" : "s"} need a stock check</Typography>
+                                <Typography variant="body2" fontWeight={650}>{lowStock.length} pack size{lowStock.length === 1 ? "" : "s"} need a stock check</Typography>
                                 <Button component={Link} to="/admin/products" size="small" endIcon={<MdArrowForward />} sx={{ ml: "auto" }}>Review inventory</Button>
                             </Stack>
                         </Paper>

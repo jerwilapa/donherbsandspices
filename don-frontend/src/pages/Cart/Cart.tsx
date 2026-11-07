@@ -13,10 +13,12 @@ import {
     Alert,
     CircularProgress,
 } from "@mui/material";
-import DeleteIcon from "@mui/icons-material/Delete";
-import AddIcon from "@mui/icons-material/Add";
-import RemoveIcon from "@mui/icons-material/Remove";
-import LocalShippingIcon from "@mui/icons-material/LocalShipping";
+import {
+    MdAdd as AddIcon,
+    MdDelete as DeleteIcon,
+    MdLocalShipping as LocalShippingIcon,
+    MdRemove as RemoveIcon,
+} from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 import { getCart, updateCartItem, removeCartItem } from "../../services/cartService";
 import Navbar from "../../components/Navbar/NavBar";
@@ -219,7 +221,7 @@ const Cart = () => {
                                                         }}
                                                         disabled={item.quantity <= 1 || updatingId === item.id}
                                                     >
-                                                        <RemoveIcon fontSize="small" />
+                                                        <RemoveIcon size={20} />
                                                     </IconButton>
                                                     <Box
                                                         sx={{
@@ -242,7 +244,7 @@ const Cart = () => {
                                                             (item.stock !== undefined && item.quantity >= item.stock)
                                                         }
                                                     >
-                                                        <AddIcon fontSize="small" />
+                                                        <AddIcon size={20} />
                                                     </IconButton>
                                                     <Button
                                                         type="button"
@@ -316,7 +318,7 @@ const Cart = () => {
                                     color: "text.secondary",
                                 }}
                             >
-                                <LocalShippingIcon fontSize="small" />
+                                <LocalShippingIcon size={20} />
                                 <Typography variant="body2">
                                     Fast shipping and easy returns.
                                 </Typography>

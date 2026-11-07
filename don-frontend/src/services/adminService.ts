@@ -35,6 +35,13 @@ export const updateProduct = async (productId: number, payload: any) => {
   return res.data;
 };
 
+export const bulkUpdateProductPrices = async (
+  updates: { productId: number; sourcePrice: number }[],
+) => {
+  const res = await api.put("/admin/products/prices/bulk", { updates });
+  return res.data;
+};
+
 export const deleteProduct = async (productId: number) => {
   const res = await api.delete(`/admin/products/${productId}`);
   return res.data;

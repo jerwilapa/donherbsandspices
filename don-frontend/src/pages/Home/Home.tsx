@@ -157,13 +157,10 @@ const Home = () => {
                                     name={item.name}
                                     price={item.price}
                                     image={getImageUrl(item.image)}
+                                    stock={item.stock}
                                     onAddToCart={async (productId) => {
-                                        try {
-                                            await addToCart(productId, 1);
-                                            window.dispatchEvent(new Event("cartUpdated"));
-                                        } catch (err: any) {
-                                            console.error("Add to cart failed", err);
-                                        }
+                                        await addToCart(productId, 1);
+                                        window.dispatchEvent(new Event("cartUpdated"));
                                     }}
                                     onToggleFavorite={handleToggleFavorite}
                                     isFavorite={favorites.includes(item.id)}

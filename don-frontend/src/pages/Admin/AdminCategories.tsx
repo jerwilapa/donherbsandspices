@@ -22,10 +22,15 @@ import {
 import { createCategory, deleteCategory, getAdminCategories, getAdminProducts, updateCategory } from "../../services/adminService";
 import { showToast } from "../../helper/showToast";
 import { MdAdd, MdCategory, MdDeleteOutline, MdEdit, MdSearch } from "react-icons/md";
+import { groupCatalogProducts } from "../../utils/productCatalog";
 
 const AdminCategories = () => {
     const { data: categories = [], isLoading: loadingCategories, refetch } = useQuery({ queryKey: ["adminCategories"], queryFn: getAdminCategories, retry: false });
     const { data: products = [], isLoading: loadingProducts } = useQuery({ queryKey: ["adminProducts"], queryFn: getAdminProducts, retry: false });
+    const catalogProducts = useMemo(
+        () => groupCatalogProducts(Array.isArray(products) ? products : []),
+        [products],
+    );
     const [form, setForm] = useState({ name: "", image: "" });
     const [editingCategory, setEditingCategory] = useState<any | null>(null);
     const [formOpen, setFormOpen] = useState(false);
@@ -101,7 +106,7 @@ const AdminCategories = () => {
             <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} justifyContent="space-between" gap={1.5}>
                 <Box>
                     <Typography variant="body2" color="text.secondary">Group products so customers can browse the catalog.</Typography>
-                    <Typography variant="body2" fontWeight={650} sx={{ mt: 0.5 }}>{categories.length} categories · {products.length} products</Typography>
+                    <Typography variant="body2" fontWeight={650} sx={{ mt: 0.5 }}>{categories.length} categories · {catalogProducts.length} products · {products.length} pack sizes</Typography>
                 </Box>
                 <Button variant="contained" startIcon={<MdAdd />} onClick={openCreate}>Add category</Button>
             </Stack>
@@ -124,7 +129,7 @@ const AdminCategories = () => {
                                 <TableHead><TableRow sx={{ bgcolor: "#f7f9f6" }}><TableCell>Category</TableCell><TableCell>Products</TableCell><TableCell>Image</TableCell><TableCell align="right">Actions</TableCell></TableRow></TableHead>
                                 <TableBody>
                                     {visibleCategories.map((category: any) => {
-                                        const count = products.filter((product: any) => String(product.category_id) === String(category.id)).length;
+                                        const count = catalogProducts.filter((product) => String(product.variants[0]?.product.category_id) === String(category.id)).length;
                                         return (
                                             <TableRow key={category.id} hover>
                                                 <TableCell><Typography variant="body2" fontWeight={700}>{category.name}</Typography><Typography variant="caption" color="text.secondary">ID {category.id}</Typography></TableCell>

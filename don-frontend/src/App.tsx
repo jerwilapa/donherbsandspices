@@ -26,6 +26,11 @@ function App() {
 
   useEffect(() => {
     const loadUser = async () => {
+      if (!localStorage.getItem("token")) {
+        localStorage.removeItem("user");
+        return;
+      }
+
       try {
         const res = await api.get("/users/me");
 

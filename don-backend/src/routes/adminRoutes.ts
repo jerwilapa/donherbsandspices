@@ -15,6 +15,7 @@ import {
   deleteCategory,
 } from "../controllers/adminController";
 import { uploadProductImage } from "../config/multer";
+import { bulkUpdateProductPrices } from "../controllers/bulkPriceUpdateController";
 
 const router = express.Router();
 
@@ -40,6 +41,7 @@ router.delete("/products/:productId", deleteProduct);
 
 /* GET */
 router.get("/products", getProductsAdmin);
+router.put("/products/prices/bulk", bulkUpdateProductPrices);
 
 router.get("/categories", getCategoriesAdmin);
 router.post("/categories", createCategory);

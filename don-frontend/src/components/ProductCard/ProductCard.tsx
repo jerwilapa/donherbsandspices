@@ -9,10 +9,12 @@ import {
     Alert,
     Dialog,
 } from "@mui/material";
-import FavoriteIcon from "@mui/icons-material/Favorite";
-import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
-import VisibilityIcon from "@mui/icons-material/Visibility";
-import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
+import {
+    MdFavorite as FavoriteIcon,
+    MdFavoriteBorder as FavoriteBorderIcon,
+    MdVisibility as VisibilityIcon,
+    MdShoppingCart as ShoppingCartIcon,
+} from "react-icons/md";
 
 import { useEffect, useState } from "react";
 
@@ -207,9 +209,9 @@ const ProductCard = ({
                             }}
                         >
                             {favorite ? (
-                                <FavoriteIcon fontSize="small" />
+                                <FavoriteIcon size={20} />
                             ) : (
-                                <FavoriteBorderIcon fontSize="small" />
+                                <FavoriteBorderIcon size={20} />
                             )}
                         </IconButton>
 
@@ -218,7 +220,7 @@ const ProductCard = ({
                             onClick={handleQuickView}
                             sx={{ bgcolor: "#fff" }}
                         >
-                            <VisibilityIcon fontSize="small" />
+                            <VisibilityIcon size={20} />
                         </IconButton>
                     </Box>
                 </Box>
@@ -265,7 +267,7 @@ const ProductCard = ({
                     <Button
                         fullWidth
                         variant="contained"
-                        startIcon={<ShoppingCartIcon />}
+                        startIcon={<ShoppingCartIcon size={20} />}
                         onClick={handleAdd}
                         disabled={
                             loading ||

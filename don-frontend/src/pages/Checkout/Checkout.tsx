@@ -17,7 +17,7 @@ import Navbar from "../../components/Navbar/NavBar";
 import AddressForm from "../../components/Checkout/AddressForm";
 import DeliveryMethod from "../../components/Checkout/DeliveryMethod";
 import AddressPicker from "../../components/Checkout/AddressPicker";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import { MdArrowBack as ArrowBackIcon } from "react-icons/md";
 import { useNavigate } from "react-router-dom";
 
 import { getCart } from "../../services/cartService";

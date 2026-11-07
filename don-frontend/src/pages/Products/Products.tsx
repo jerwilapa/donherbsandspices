@@ -14,7 +14,6 @@ import { api } from "../../services/api";
 import { useSearchParams } from "react-router-dom";
 import { getImageUrl } from "../../utils/image";
 import { addToCart, getCart } from "../../services/cartService";
-import { showToast } from "../../helper/showToast";
 import { toggleFavorite } from "../../services/favoriteApi";
 
 type Product = {
@@ -119,14 +118,9 @@ const Products = () => {
         return categoryMatch && searchMatch;
     });
     const handleAddToCart = async (productId: number) => {
-        try {
-            await addToCart(productId, 1);
-            window.dispatchEvent(new Event("cartUpdated"));
-            await loadCartItems();
-        } catch (err: any) {
-            const message = err?.response?.data?.message || "Add to cart failed";
-            showToast("error", message);
-        }
+        await addToCart(productId, 1);
+        window.dispatchEvent(new Event("cartUpdated"));
+        await loadCartItems();
     };
     const handleToggleFavorite = async (productId: number) => {
         const user = JSON.parse(localStorage.getItem("user") || "{}");

@@ -13,7 +13,7 @@ import {
     CircularProgress,
     Divider,
 } from "@mui/material";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import { MdExpandMore as ExpandMoreIcon } from "react-icons/md";
 import Navbar from "../../components/Navbar/NavBar";
 import { getOrders } from "../../services/orderService";
 
