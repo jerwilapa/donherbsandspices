@@ -8,6 +8,10 @@ import {
     Snackbar,
     Alert,
     Dialog,
+    FormControl,
+    InputLabel,
+    MenuItem,
+    Select,
 } from "@mui/material";
 import {
     MdFavorite as FavoriteIcon,
@@ -18,26 +22,26 @@ import {
 
 import { useEffect, useState } from "react";
 
-type Props = {
+type ProductVariant = {
     productId: number;
-    name: string;
+    size: string;
     price: number;
     image: string;
-    stock?: number;
+    stock: number;
     cartQuantity?: number;
     isFavorite?: boolean;
+};
+
+type Props = {
+    name: string;
+    variants: ProductVariant[];
     onToggleFavorite?: (id: number) => Promise<void>;
     onAddToCart: (id: number) => Promise<void> | void;
 };
 
 const ProductCard = ({
-    productId,
     name,
-    price,
-    image,
-    stock,
-    cartQuantity,
-    isFavorite,
+    variants,
     onToggleFavorite,
     onAddToCart,
 }: Props) => {
@@ -48,19 +52,28 @@ const ProductCard = ({
         message: "",
         severity: "success" as "success" | "error",
     });
-    const [favorite, setFavorite] = useState(isFavorite || false);
+    const [selectedProductId, setSelectedProductId] = useState(variants[0]?.productId);
+    const selectedVariant =
+        variants.find((variant) => variant.productId === selectedProductId) ?? variants[0];
+    const favorite = selectedVariant?.isFavorite ?? false;
     const [open, setOpen] = useState(false);
     const handleQuickView = (e: React.MouseEvent<HTMLButtonElement>) => {
         e.stopPropagation();
         setOpen(true);
     };
-    const availableStock =
-        stock !== undefined ? Math.max(stock - (cartQuantity || 0), 0) : undefined;
     useEffect(() => {
-        setFavorite(isFavorite || false);
-    }, [isFavorite]);
+        if (!variants.some((variant) => variant.productId === selectedProductId)) {
+            setSelectedProductId(variants[0]?.productId);
+        }
+    }, [selectedProductId, variants]);
+    if (!selectedVariant) return null;
+
+    const availableStock = Math.max(
+        selectedVariant.stock - (selectedVariant.cartQuantity || 0),
+        0,
+    );
     const handleAdd = async () => {
-        if (availableStock !== undefined && availableStock <= 0) {
+        if (availableStock <= 0) {
             setSnackbar({
                 open: true,
                 message: "No stock available after existing cart quantity.",
@@ -72,7 +85,7 @@ const ProductCard = ({
         try {
             setLoading(true);
 
-            await onAddToCart(productId);
+            await onAddToCart(selectedVariant.productId);
 
             setSnackbar({
                 open: true,
@@ -96,15 +109,13 @@ const ProductCard = ({
         e.stopPropagation();
 
         try {
-            await onToggleFavorite?.(productId);
-
-            setFavorite((prev) => !prev);
+            await onToggleFavorite?.(selectedVariant.productId);
 
             setSnackbar({
                 open: true,
-                message: !favorite
-                    ? "Added to favorites"
-                    : "Removed from favorites",
+                message: favorite
+                    ? "Removed from favorites"
+                    : "Added to favorites",
                 severity: "success",
             });
         } catch {
@@ -148,7 +159,7 @@ const ProductCard = ({
                 >
                     <Box
                         component="img"
-                        src={image}
+                        src={selectedVariant.image}
                         alt={name}
                         sx={{
                             position: "absolute",
@@ -178,7 +189,10 @@ const ProductCard = ({
                             fontSize: 14,
                         }}
                     >
-                        ₱{price}
+                        ₱{Number(selectedVariant.price).toLocaleString("en-PH", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                        })}
                     </Box>
 
                     {/* QUICK ACTIONS */}
@@ -241,25 +255,35 @@ const ProductCard = ({
                         {name}
                     </Typography>
 
-                    {stock !== undefined && (
-                        <Typography
-                            variant="body2"
-                            sx={{
-                                mt: 1,
-                                color:
-                                    availableStock !== undefined && availableStock > 0
-                                        ? "success.main"
-                                        : "error.main",
-                                fontWeight: 600,
-                            }}
-                        >
-                            {availableStock !== undefined
-                                ? availableStock > 0
-                                    ? `${availableStock} left${cartQuantity ? ` · ${cartQuantity} in cart` : ""}`
-                                    : "Out of stock"
-                                : `${stock} in stock`}
-                        </Typography>
+                    {variants.length > 1 && (
+                        <FormControl fullWidth size="small" sx={{ mt: 1.5 }}>
+                            <InputLabel id={`size-label-${selectedVariant.productId}`}>Size</InputLabel>
+                            <Select
+                                labelId={`size-label-${selectedVariant.productId}`}
+                                value={selectedVariant.productId}
+                                label="Size"
+                                onChange={(event) => setSelectedProductId(Number(event.target.value))}
+                            >
+                                {variants.map((variant) => (
+                                    <MenuItem key={variant.productId} value={variant.productId}>
+                                        {variant.size}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
                     )}
+                    <Typography
+                        variant="body2"
+                        sx={{
+                            mt: 1,
+                            color: availableStock > 0 ? "success.main" : "error.main",
+                            fontWeight: 600,
+                        }}
+                    >
+                        {availableStock > 0
+                            ? `${availableStock} left${selectedVariant.cartQuantity ? ` · ${selectedVariant.cartQuantity} in cart` : ""}`
+                            : "Out of stock"}
+                    </Typography>
                 </CardContent>
 
                 {/* ACTION */}
@@ -271,7 +295,7 @@ const ProductCard = ({
                         onClick={handleAdd}
                         disabled={
                             loading ||
-                            (availableStock !== undefined && availableStock <= 0)
+                            availableStock <= 0
                         }
                         sx={{
                             textTransform: "none",
@@ -283,7 +307,7 @@ const ProductCard = ({
                             },
                         }}
                     >
-                        {availableStock !== undefined && availableStock <= 0
+                        {availableStock <= 0
                             ? "Out of Stock"
                             : loading
                                 ? "Adding..."
@@ -310,8 +334,14 @@ const ProductCard = ({
             <Dialog open={open} onClose={() => setOpen(false)} fullWidth>
                 <Box p={3}>
                     <Typography variant="h6">{name}</Typography>
-                    <img src={image} width="100%" />
-                    <Typography>₱{price}</Typography>
+                    <img src={selectedVariant.image} width="100%" alt={name} />
+                    <Typography>{selectedVariant.size}</Typography>
+                    <Typography>
+                        ₱{Number(selectedVariant.price).toLocaleString("en-PH", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                        })}
+                    </Typography>
                 </Box>
             </Dialog>
         </>

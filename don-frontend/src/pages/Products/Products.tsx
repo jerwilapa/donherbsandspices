@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
     Box,
     Container,
@@ -15,6 +15,7 @@ import { useSearchParams } from "react-router-dom";
 import { getImageUrl } from "../../utils/image";
 import { addToCart, getCart } from "../../services/cartService";
 import { toggleFavorite } from "../../services/favoriteApi";
+import { groupCatalogProducts } from "../../utils/productCatalog";
 
 type Product = {
     id: number;
@@ -107,14 +108,11 @@ const Products = () => {
         }
     };
 
-    const filteredProducts = products.filter((product) => {
-        const categoryMatch =
-            selectedCategory === null ||
-            product.category_id === selectedCategory;
-
-        const searchMatch =
-            product.name.toLowerCase().includes(search.toLowerCase());
-
+    const catalogProducts = useMemo(() => groupCatalogProducts(products), [products]);
+    const filteredProducts = catalogProducts.filter((product) => {
+        const categoryMatch = selectedCategory === null ||
+            product.variants.some(({ product: variant }) => variant.category_id === selectedCategory);
+        const searchMatch = product.name.toLowerCase().includes(search.toLowerCase());
         return categoryMatch && searchMatch;
     });
     const handleAddToCart = async (productId: number) => {
@@ -221,21 +219,21 @@ const Products = () => {
                                 animation="wave"
                             />
                         ))
-                        : filteredProducts.map((product) => (
+                        : filteredProducts.map((group) => (
                             <ProductCard
-                                key={product.id}
-                                productId={product.id}
-                                name={product.name}
-                                price={product.price}
-                                image={getImageUrl(product.image)}
-                                stock={product.stock}
-                                cartQuantity={
-                                    cartItems.find((item) => item.product_id === product.id)
-                                        ?.quantity || 0
-                                }
+                                key={`${group.variants[0]?.product.category_id ?? ""}:${group.name}`}
+                                name={group.name}
+                                variants={group.variants.map(({ product, size }) => ({
+                                    productId: product.id,
+                                    size,
+                                    price: Number(product.price),
+                                    image: getImageUrl(product.image),
+                                    stock: Number(product.stock),
+                                    cartQuantity: cartItems.find((item) => item.product_id === product.id)?.quantity || 0,
+                                    isFavorite: favorites.includes(product.id),
+                                }))}
                                 onAddToCart={handleAddToCart}
                                 onToggleFavorite={handleToggleFavorite}
-                                isFavorite={favorites.includes(product.id)}
                             />
                         ))}
                 </Box>

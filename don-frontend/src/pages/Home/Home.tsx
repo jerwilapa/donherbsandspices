@@ -19,6 +19,7 @@ import { getImageUrl } from "../../utils/image";
 import { useEffect, useMemo, useState } from "react";
 import { toggleFavorite } from "../../services/favoriteApi";
 import api from "../../api/axios";
+import { groupCatalogProducts } from "../../utils/productCatalog";
 
 const Home = () => {
     const navigate = useNavigate();
@@ -52,13 +53,16 @@ const Home = () => {
         queryKey: ["products"],
         queryFn: fetchProducts,
     });
+    const catalogProducts = useMemo(() => groupCatalogProducts(products), [products]);
     const categoryCounts = useMemo(() => {
-        return products.reduce((acc: any, product: any) => {
-            acc[product.category_id] =
-                (acc[product.category_id] || 0) + 1;
+        return catalogProducts.reduce((acc: Record<string, number>, group) => {
+            const categoryId = group.variants[0]?.product.category_id;
+            if (categoryId !== null && categoryId !== undefined) {
+                acc[categoryId] = (acc[categoryId] || 0) + 1;
+            }
             return acc;
         }, {});
-    }, [products]);
+    }, [catalogProducts]);
     const handleToggleFavorite = async (productId: number) => {
         const user = JSON.parse(localStorage.getItem("user") || "{}");
 
@@ -150,20 +154,23 @@ const Home = () => {
                                     animation="wave"
                                 />
                             ))
-                            : products.slice(0, 10).map((item: any) => (
+                            : catalogProducts.slice(0, 10).map((group) => (
                                 <ProductCard
-                                    key={item.id}
-                                    productId={item.id}
-                                    name={item.name}
-                                    price={item.price}
-                                    image={getImageUrl(item.image)}
-                                    stock={item.stock}
+                                    key={`${group.variants[0]?.product.category_id ?? ""}:${group.name}`}
+                                    name={group.name}
+                                    variants={group.variants.map(({ product, size }) => ({
+                                        productId: product.id,
+                                        size,
+                                        price: Number(product.price),
+                                        image: getImageUrl(product.image),
+                                        stock: Number(product.stock),
+                                        isFavorite: favorites.includes(product.id),
+                                    }))}
                                     onAddToCart={async (productId) => {
                                         await addToCart(productId, 1);
                                         window.dispatchEvent(new Event("cartUpdated"));
                                     }}
                                     onToggleFavorite={handleToggleFavorite}
-                                    isFavorite={favorites.includes(item.id)}
                                 />
                             ))}
                     </Box>
