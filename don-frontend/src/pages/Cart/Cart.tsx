@@ -187,6 +187,8 @@ const Cart = () => {
                                                 component="img"
                                                 src={getImageUrl(item.image)}
                                                 alt={item.name}
+                                                loading="lazy"
+                                                decoding="async"
                                                 sx={{
                                                     width: 120,
                                                     height: 120,

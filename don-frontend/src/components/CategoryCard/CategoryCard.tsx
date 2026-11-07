@@ -26,7 +26,6 @@ const CategoryCard = ({
                 overflow: "hidden",
                 border: active ? "2px solid #111" : "1px solid #e0e0e0",
                 transition: "transform 0.25s ease, opacity 0.25s ease",
-                willChange: "transform, opacity",
                 boxShadow: active
                     ? "0 10px 25px rgba(0,0,0,0.25)"
                     : "0 2px 8px rgba(0,0,0,0.06)",
@@ -43,6 +42,8 @@ const CategoryCard = ({
                 component="img"
                 src={image}
                 alt={title}
+                loading="lazy"
+                decoding="async"
                 sx={{
                     position: "absolute",
                     inset: 0,

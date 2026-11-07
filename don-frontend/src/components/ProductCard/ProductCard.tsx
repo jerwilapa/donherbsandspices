@@ -141,7 +141,6 @@ const ProductCard = ({
                     cursor: "pointer",
                     boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
                     transition: "transform 0.25s ease, opacity 0.25s ease",
-                    willChange: "transform, opacity",
                     "&:hover": {
                         transform: "translateY(-4px)",
                         boxShadow: "0 12px 25px rgba(0,0,0,0.15)",
@@ -162,6 +161,8 @@ const ProductCard = ({
                         component="img"
                         src={selectedVariant.image}
                         alt={name}
+                        loading="lazy"
+                        decoding="async"
                         sx={{
                             position: "absolute",
                             inset: 0,
@@ -169,7 +170,6 @@ const ProductCard = ({
                             height: "100%",
                             objectFit: "cover",
                             transition: "transform 0.35s ease",
-                            willChange: "transform",
                             transform: hover ? "scale(1.08)" : "scale(1)",
                             display: "block",
                         }}
@@ -208,7 +208,6 @@ const ProductCard = ({
                             opacity: hover ? 1 : 0,
                             transform: hover ? "translateY(0)" : "translateY(-10px)",
                             transition: "transform 0.25s ease, opacity 0.25s ease",
-                            willChange: "transform, opacity",
                         }}
                     >
                         <IconButton
@@ -352,6 +351,8 @@ const ProductCard = ({
                             component="img"
                             src={selectedVariant.image}
                             alt={name}
+                            loading="lazy"
+                            decoding="async"
                             sx={{
                                 display: "block",
                                 width: "100%",

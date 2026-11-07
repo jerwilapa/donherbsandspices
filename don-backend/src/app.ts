@@ -31,7 +31,7 @@ app.use(express.json());
 ======================== */
 const uploadsPath = path.resolve(process.cwd(), "uploads");
 
-app.use("/uploads", express.static(uploadsPath));
+app.use("/uploads", express.static(uploadsPath, { maxAge: "1d" }));
 
 /* ========================
    ROUTES

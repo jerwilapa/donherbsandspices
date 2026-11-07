@@ -301,7 +301,7 @@ const AdminProducts = () => {
                                             <TableRow key={`${product.category_id}-${group.name}`} hover>
                                                 <TableCell>
                                                     <Stack direction="row" alignItems="center" spacing={1.25}>
-                                                        <Box component="img" src={getImageUrl(product.image)} alt="" sx={{ width: 44, height: 44, objectFit: "cover", borderRadius: "6px", bgcolor: "#eef2ec" }} />
+                                                        <Box component="img" src={getImageUrl(product.image)} alt="" loading="lazy" decoding="async" sx={{ width: 44, height: 44, objectFit: "cover", borderRadius: "6px", bgcolor: "#eef2ec" }} />
                                                         <Box><Typography variant="body2" fontWeight={700}>{group.name}</Typography><Typography variant="caption" color="text.secondary">{group.variants.length} pack sizes</Typography></Box>
                                                     </Stack>
                                                 </TableCell>
