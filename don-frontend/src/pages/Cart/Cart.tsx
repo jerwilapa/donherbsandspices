@@ -22,7 +22,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { getCart, updateCartItem, removeCartItem } from "../../services/cartService";
 import Navbar from "../../components/Navbar/NavBar";
-import { getImageUrl } from "../../utils/image";
+import { getImageUrl, handleImageError } from "../../utils/image";
 
 const Cart = () => {
     const navigate = useNavigate();
@@ -53,7 +53,7 @@ const Cart = () => {
 
         setLoading(true);
         try {
-            const res = await getCart(user.id);
+            const res = await getCart();
             setCart(res.data);
         } catch (err) {
             console.error(err);
@@ -186,6 +186,7 @@ const Cart = () => {
                                             <Box
                                                 component="img"
                                                 src={getImageUrl(item.image)}
+                                                onError={handleImageError}
                                                 alt={item.name}
                                                 loading="lazy"
                                                 decoding="async"

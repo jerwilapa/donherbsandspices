@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480" role="img" aria-labelledby="title description">
+  <title id="title">Product image unavailable</title>
+  <desc id="description">A simple bowl of herbs on a warm cream background</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8f5eb"/>
+      <stop offset="1" stop-color="#e8eedf"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="480" fill="url(#background)"/>
+  <circle cx="320" cy="210" r="112" fill="#fffdf7" opacity=".8"/>
+  <path d="M225 229h190l-20 83c-4 17-19 29-37 29h-76c-18 0-33-12-37-29z" fill="#9e6843"/>
+  <path d="M218 222c0-13 10-23 23-23h158c13 0 23 10 23 23v12H218z" fill="#c58b58"/>
+  <path d="M272 202c-22-29 9-45 0-69 27 17 33 37 22 59 8-29 35-45 62-48-8 22-4 42-31 60" fill="none" stroke="#71885d" stroke-linecap="round" stroke-linejoin="round" stroke-width="14"/>
+  <path d="M290 201c-9-24-26-33-49-33 10 19 25 29 49 33m31 0c11-23 30-34 55-32-12 20-30 30-55 32" fill="#91a978"/>
+  <text x="320" y="393" fill="#52634a" font-family="Arial, sans-serif" font-size="21" font-weight="600" text-anchor="middle">Image unavailable</text>
+</svg>

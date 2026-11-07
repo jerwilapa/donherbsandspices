@@ -11,15 +11,6 @@ import {
 import { API_URL } from "../../../config/env";
 import { Link, useNavigate } from "react-router-dom";
 import { showToast } from "../../helper/showToast";
-import { jwtDecode } from "jwt-decode";
-
-type TokenPayload = {
-    id: number;
-    email: string;
-    role: string;
-    iat: number;
-    exp: number;
-};
 
 const Login = () => {
     const navigate = useNavigate();
@@ -34,22 +25,9 @@ const Login = () => {
                 { email, password }
             );
 
-            const { token } = res.data;
+            const { token, user: fullUser } = res.data;
 
-            // 1. store token
             localStorage.setItem("token", token);
-
-            // 2. decode token (ONLY for ID)
-            const tokenUser = jwtDecode<TokenPayload>(token);
-
-            // 3. fetch FULL user from DB (IMPORTANT FIX)
-            const userRes = await axios.get(
-                `${API_URL}/api/auth/users/${tokenUser.id}`
-            );
-
-            const fullUser = userRes.data;
-
-            // 4. store FULL user
             localStorage.setItem("user", JSON.stringify(fullUser));
 
             window.dispatchEvent(new Event("auth-change"));

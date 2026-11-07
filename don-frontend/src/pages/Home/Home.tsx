@@ -29,7 +29,7 @@ const Home = () => {
             const user = JSON.parse(localStorage.getItem("user") || "{}");
             if (!user?.id) return;
 
-            const res = await api.get(`/favorites/${user.id}`);
+            const res = await api.get("/favorites");
 
             setFavorites(res.data.map((f: any) => f.product_id));
         };
@@ -69,7 +69,7 @@ const Home = () => {
         if (!user?.id) return;
 
         try {
-            const res = await toggleFavorite(user.id, productId);
+            const res = await toggleFavorite(productId);
 
             setFavorites((prev) =>
                 res.favorite

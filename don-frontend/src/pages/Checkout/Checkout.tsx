@@ -44,8 +44,7 @@ const mapAddress = (addr: any) => ({
     isDefault: addr.isDefault,
 });
 
-const mapToBackend = (addr: any, userId: number) => ({
-    userId,
+const mapToBackend = (addr: any) => ({
     fullName: addr.fullName,
     phone: addr.phone,
     addressLine: addr.addressLine,
@@ -87,7 +86,7 @@ const Checkout = () => {
 
             setLoading(true);
             try {
-                const res = await getCart(user.id);
+                const res = await getCart();
                 setCart(res.data);
             } finally {
                 setLoading(false);
@@ -104,7 +103,7 @@ const Checkout = () => {
         const loadAddresses = async () => {
             if (!user?.id) return;
 
-            const res = await getSavedAddress(user.id);
+            const res = await getSavedAddress();
             const formatted = res.data.map(mapAddress);
 
             setAddresses(formatted);
@@ -134,9 +133,9 @@ const Checkout = () => {
     ========================= */
     const handleSetDefault = async (id: number) => {
         try {
-            await setDefaultAddress(user.id, id);
+            await setDefaultAddress(id);
 
-            const res = await getSavedAddress(user.id);
+            const res = await getSavedAddress();
             const formatted = res.data.map(mapAddress);
 
             setAddresses(formatted);
@@ -180,15 +179,10 @@ const Checkout = () => {
 
         try {
             if (saveMyAddress && hasEditedAddress) {
-                await saveAddress(mapToBackend(address, user.id));
+                await saveAddress(mapToBackend(address));
             }
 
             await placeOrder({
-                userId: user.id,
-                items: cart.map((i) => ({
-                    productId: i.product_id,
-                    quantity: i.quantity,
-                })),
                 address,
                 deliveryMethod: delivery,
                 shipping,

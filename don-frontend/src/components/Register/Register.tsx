@@ -26,6 +26,11 @@ const Register = () => {
             return;
         }
 
+        if (password.length < 12 || password.length > 128) {
+            showToast("error", "Password must be between 12 and 128 characters.");
+            return;
+        }
+
         if (password !== confirmPassword) {
             showToast("error", "Passwords do not match.");
             return;
@@ -124,6 +129,7 @@ const Register = () => {
                         label="Password"
                         type="password"
                         fullWidth
+                        helperText="Use 12 to 128 characters."
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                     />

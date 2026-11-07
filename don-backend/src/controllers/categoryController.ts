@@ -1,11 +1,12 @@
 import { Request, Response } from "express";
-import { db } from "../config/db";
+import { collection, listDocuments } from "../utils/firestore";
 
-export const getCategories = async (req: Request, res: Response) => {
+export const getCategories = async (_req: Request, res: Response) => {
   try {
-    const [rows] = await db.query("SELECT * FROM categories");
-    res.json(rows);
+    const categories = await listDocuments(collection("categories"));
+    return res.json(categories.sort((a, b) => Number(a.id) - Number(b.id)));
   } catch (error) {
-    res.status(500).json({ message: "Error fetching categories" });
+    console.error("Fetch categories error", error);
+    return res.status(500).json({ message: "Error fetching categories" });
   }
 };

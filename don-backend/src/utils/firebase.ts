@@ -1,6 +1,6 @@
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
-import { db } from "../config/db";
+import { getDocument } from "./firestore";
 
 const getServiceAccount = () => {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -112,12 +112,8 @@ export const notifyUserById = async ({
   data?: Record<string, string | number | boolean>;
 }) => {
   try {
-    const [rows]: any = await db.query(
-      "SELECT fcm_token FROM users WHERE id = ?",
-      [userId],
-    );
-
-    const token = rows?.[0]?.fcm_token;
+    const user = await getDocument("users", userId);
+    const token = user?.fcm_token;
     const payload: {
       token: string | null;
       title: string;

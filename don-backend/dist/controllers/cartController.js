@@ -2,139 +2,220 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCartCount = exports.removeCartItem = exports.updateCartItem = exports.getCart = exports.addToCart = void 0;
 const db_1 = require("../config/db");
-/* ========================
-   ADD TO CART
-======================== */
+const firestore_1 = require("../utils/firestore");
+const productImage_1 = require("../utils/productImage");
+const getUserCart = async (userId) => {
+    const carts = await (0, firestore_1.listDocuments)((0, firestore_1.collection)("cart").where("user_id", "==", userId).limit(1));
+    return carts[0] || null;
+};
 const addToCart = async (req, res) => {
-    const { userId, productId, quantity = 1 } = req.body;
+    const userId = req.user?.id;
+    const { productId, quantity = 1 } = req.body;
+    if (!userId)
+        return res.status(401).json({ message: "Unauthorized" });
+    if (!Number.isInteger(Number(productId)) ||
+        Number(productId) <= 0 ||
+        !Number.isInteger(quantity) ||
+        quantity <= 0) {
+        return res.status(400).json({ message: "Product and positive quantity are required." });
+    }
     try {
-        const [productRows] = await db_1.db.query("SELECT stock FROM products WHERE id = ?", [productId]);
-        const product = productRows[0];
-        if (!product) {
+        const productRef = (0, firestore_1.collection)("products").doc((0, firestore_1.documentId)(productId));
+        await db_1.db.runTransaction(async (transaction) => {
+            const productSnapshot = await transaction.get(productRef);
+            const product = (0, firestore_1.snapshotData)(productSnapshot);
+            if (!product)
+                throw new Error("PRODUCT_NOT_FOUND");
+            const cartQuery = (0, firestore_1.collection)("cart").where("user_id", "==", userId).limit(1);
+            const cartQuerySnapshot = await transaction.get(cartQuery);
+            let cart = cartQuerySnapshot.docs[0]
+                ? (0, firestore_1.snapshotData)(cartQuerySnapshot.docs[0])
+                : null;
+            let cartRef = cartQuerySnapshot.docs[0]?.ref;
+            let newCartId = 0;
+            if (!cart) {
+                const counterRef = (0, firestore_1.collection)("_counters").doc("cart");
+                const counterSnapshot = await transaction.get(counterRef);
+                newCartId = Number(counterSnapshot.data()?.value || 0) + 1;
+                cartRef = (0, firestore_1.collection)("cart").doc((0, firestore_1.documentId)(newCartId));
+                cart = { id: newCartId, user_id: userId, created_at: new Date() };
+            }
+            const cartId = Number(cart.id);
+            const itemQuery = (0, firestore_1.collection)("cart_items").where("cart_id", "==", cartId);
+            const itemSnapshot = await transaction.get(itemQuery);
+            const existingSnapshot = itemSnapshot.docs.find((snapshot) => Number(snapshot.data().product_id) === Number(productId));
+            const existing = existingSnapshot ? (0, firestore_1.snapshotData)(existingSnapshot) : null;
+            const newQuantity = Number(existing?.quantity || 0) + quantity;
+            if (newQuantity > Number(product.stock))
+                throw new Error("STOCK_LIMIT");
+            let newItemId = 0;
+            let itemRef = existingSnapshot?.ref;
+            if (!existing) {
+                const counterRef = (0, firestore_1.collection)("_counters").doc("cart_items");
+                const counterSnapshot = await transaction.get(counterRef);
+                newItemId = Number(counterSnapshot.data()?.value || 0) + 1;
+                itemRef = (0, firestore_1.collection)("cart_items").doc((0, firestore_1.documentId)(newItemId));
+            }
+            if (!cartQuerySnapshot.docs.length) {
+                transaction.set((0, firestore_1.collection)("_counters").doc("cart"), { value: newCartId });
+                transaction.create(cartRef, cart);
+            }
+            if (!existing) {
+                transaction.set((0, firestore_1.collection)("_counters").doc("cart_items"), { value: newItemId });
+                transaction.create(itemRef, {
+                    id: newItemId,
+                    cart_id: cartId,
+                    product_id: Number(productId),
+                    quantity,
+                });
+            }
+            else {
+                transaction.update(itemRef, { quantity: newQuantity });
+            }
+        });
+        return res.json({ message: "Added to cart" });
+    }
+    catch (error) {
+        if (error instanceof Error && error.message === "PRODUCT_NOT_FOUND") {
             return res.status(404).json({ message: "Product not found" });
         }
-        // 1. get or create cart
-        let [cart] = await db_1.db.query("SELECT * FROM cart WHERE user_id = ?", [
-            userId,
-        ]);
-        if (cart.length === 0) {
-            const [result] = await db_1.db.query("INSERT INTO cart (user_id) VALUES (?)", [userId]);
-            cart = [{ id: result.insertId }];
+        if (error instanceof Error && error.message === "STOCK_LIMIT") {
+            return res.status(400).json({ message: "Cannot add more than available stock" });
         }
-        const cartId = cart[0].id;
-        // 2. check existing item
-        const [existing] = await db_1.db.query("SELECT * FROM cart_items WHERE cart_id = ? AND product_id = ?", [cartId, productId]);
-        if (existing.length > 0) {
-            const newQuantity = existing[0].quantity + quantity;
-            if (newQuantity > product.stock) {
-                return res.status(400).json({
-                    message: "Cannot add more than available stock",
-                });
-            }
-            await db_1.db.query("UPDATE cart_items SET quantity = ? WHERE id = ?", [newQuantity, existing[0].id]);
-        }
-        else {
-            if (quantity > product.stock) {
-                return res.status(400).json({
-                    message: "Cannot add more than available stock",
-                });
-            }
-            await db_1.db.query("INSERT INTO cart_items (cart_id, product_id, quantity) VALUES (?, ?, ?)", [cartId, productId, quantity]);
-        }
-        res.json({ message: "Added to cart" });
-    }
-    catch (err) {
-        res.status(500).json(err);
+        console.error("Add to cart error", error);
+        return res.status(500).json({ message: "Unable to update cart" });
     }
 };
 exports.addToCart = addToCart;
 const getCart = async (req, res) => {
-    const { userId } = req.params;
+    const userId = req.user?.id;
+    if (!userId)
+        return res.status(401).json({ message: "Unauthorized" });
     try {
-        const [cart] = await db_1.db.query("SELECT * FROM cart WHERE user_id = ?", [
-            userId,
-        ]);
-        if (cart.length === 0) {
+        const cart = await getUserCart(userId);
+        if (!cart)
             return res.json([]);
-        }
-        const cartId = cart[0].id;
-        const [items] = await db_1.db.query(`
-            SELECT 
-                ci.id,
-                ci.product_id,
-                ci.quantity,
-                p.name,
-                p.price,
-                p.image,
-                p.stock
-            FROM cart_items ci
-            JOIN products p ON p.id = ci.product_id
-            WHERE ci.cart_id = ?
-        `, [cartId]);
-        res.json(items);
+        const items = await (0, firestore_1.listDocuments)((0, firestore_1.collection)("cart_items").where("cart_id", "==", Number(cart.id)));
+        if (!items.length)
+            return res.json([]);
+        const productSnapshots = await db_1.db.getAll(...items.map((item) => (0, firestore_1.collection)("products").doc((0, firestore_1.documentId)(item.product_id))));
+        const products = new Map(productSnapshots
+            .map((snapshot) => (0, firestore_1.snapshotData)(snapshot))
+            .filter((product) => product !== null)
+            .map((product) => [Number(product.id), product]));
+        return res.json(items.flatMap((item) => {
+            const product = products.get(Number(item.product_id));
+            return product
+                ? [{
+                        id: item.id,
+                        product_id: item.product_id,
+                        quantity: item.quantity,
+                        name: product.name,
+                        price: product.price,
+                        image: (0, productImage_1.resolveProductImage)(product.name, product.image),
+                        stock: product.stock,
+                    }]
+                : [];
+        }));
     }
-    catch (err) {
-        res.status(500).json(err);
+    catch (error) {
+        console.error("Get cart error", error);
+        return res.status(500).json({ message: "Unable to retrieve cart" });
     }
 };
 exports.getCart = getCart;
 const updateCartItem = async (req, res) => {
-    const { id } = req.params;
+    const userId = req.user?.id;
+    const id = typeof req.params.id === "string" ? req.params.id : "";
     const { quantity } = req.body;
+    if (!userId)
+        return res.status(401).json({ message: "Unauthorized" });
+    if (!Number.isInteger(Number(id)) || Number(id) <= 0 ||
+        !Number.isInteger(quantity) || quantity <= 0) {
+        return res.status(400).json({ message: "A positive whole-number quantity is required." });
+    }
     try {
-        const [rows] = await db_1.db.query(`SELECT ci.id, p.stock
-       FROM cart_items ci
-       JOIN products p ON p.id = ci.product_id
-       WHERE ci.id = ?`, [id]);
-        if (rows.length === 0) {
+        const itemRef = (0, firestore_1.collection)("cart_items").doc((0, firestore_1.documentId)(id));
+        await db_1.db.runTransaction(async (transaction) => {
+            const itemSnapshot = await transaction.get(itemRef);
+            const item = (0, firestore_1.snapshotData)(itemSnapshot);
+            if (!item)
+                throw new Error("CART_ITEM_NOT_FOUND");
+            const cartRef = (0, firestore_1.collection)("cart").doc((0, firestore_1.documentId)(item.cart_id));
+            const productRef = (0, firestore_1.collection)("products").doc((0, firestore_1.documentId)(item.product_id));
+            const [cartSnapshot, productSnapshot] = await Promise.all([
+                transaction.get(cartRef),
+                transaction.get(productRef),
+            ]);
+            const cart = (0, firestore_1.snapshotData)(cartSnapshot);
+            const product = (0, firestore_1.snapshotData)(productSnapshot);
+            if (!cart || Number(cart.user_id) !== userId)
+                throw new Error("CART_ITEM_NOT_FOUND");
+            if (!product)
+                throw new Error("PRODUCT_NOT_FOUND");
+            if (quantity > Number(product.stock))
+                throw new Error("STOCK_LIMIT");
+            transaction.update(itemRef, { quantity });
+        });
+        return res.json({ message: "Cart updated" });
+    }
+    catch (error) {
+        if (error instanceof Error && error.message === "CART_ITEM_NOT_FOUND") {
             return res.status(404).json({ message: "Cart item not found" });
         }
-        const stock = rows[0].stock;
-        if (quantity > stock) {
-            return res.status(400).json({
-                message: "Quantity exceeds available stock",
-            });
+        if (error instanceof Error && error.message === "STOCK_LIMIT") {
+            return res.status(400).json({ message: "Quantity exceeds available stock" });
         }
-        if (quantity <= 0) {
-            await db_1.db.query("DELETE FROM cart_items WHERE id = ?", [id]);
-        }
-        else {
-            await db_1.db.query("UPDATE cart_items SET quantity = ? WHERE id = ?", [
-                quantity,
-                id,
-            ]);
-        }
-        res.json({ message: "Cart updated" });
-    }
-    catch (err) {
-        res.status(500).json(err);
+        console.error("Update cart item error", error);
+        return res.status(500).json({ message: "Unable to update cart item" });
     }
 };
 exports.updateCartItem = updateCartItem;
 const removeCartItem = async (req, res) => {
-    const { id } = req.params;
+    const userId = req.user?.id;
+    const id = typeof req.params.id === "string" ? req.params.id : "";
+    if (!userId)
+        return res.status(401).json({ message: "Unauthorized" });
     try {
-        await db_1.db.query("DELETE FROM cart_items WHERE id = ?", [id]);
-        res.json({ message: "Item removed" });
+        const itemRef = (0, firestore_1.collection)("cart_items").doc((0, firestore_1.documentId)(id));
+        await db_1.db.runTransaction(async (transaction) => {
+            const itemSnapshot = await transaction.get(itemRef);
+            const item = (0, firestore_1.snapshotData)(itemSnapshot);
+            if (!item)
+                return;
+            const cartSnapshot = await transaction.get((0, firestore_1.collection)("cart").doc((0, firestore_1.documentId)(item.cart_id)));
+            const cart = (0, firestore_1.snapshotData)(cartSnapshot);
+            if (!cart || Number(cart.user_id) !== userId)
+                throw new Error("CART_ITEM_NOT_FOUND");
+            transaction.delete(itemRef);
+        });
+        return res.json({ message: "Item removed" });
     }
-    catch (err) {
-        res.status(500).json(err);
+    catch (error) {
+        if (error instanceof Error && error.message === "CART_ITEM_NOT_FOUND") {
+            return res.status(404).json({ message: "Cart item not found" });
+        }
+        console.error("Remove cart item error", error);
+        return res.status(500).json({ message: "Unable to remove cart item" });
     }
 };
 exports.removeCartItem = removeCartItem;
 const getCartCount = async (req, res) => {
-    const userId = req.user.id;
+    const userId = req.user?.id;
+    if (!userId)
+        return res.status(401).json({ message: "Unauthorized" });
     try {
-        const [rows] = await db_1.db.query(`
-            SELECT SUM(quantity) as count
-            FROM cart_items ci
-            JOIN cart c ON c.id = ci.cart_id
-            WHERE c.user_id = ?
-            `, [userId]);
-        res.json({ count: rows[0].count || 0 });
+        const cart = await getUserCart(userId);
+        if (!cart)
+            return res.json({ count: 0 });
+        const items = await (0, firestore_1.listDocuments)((0, firestore_1.collection)("cart_items").where("cart_id", "==", Number(cart.id)));
+        return res.json({
+            count: items.reduce((total, item) => total + Number(item.quantity || 0), 0),
+        });
     }
-    catch (err) {
-        res.status(500).json(err);
+    catch (error) {
+        console.error("Get cart count error", error);
+        return res.status(500).json({ message: "Unable to retrieve cart count" });
     }
 };
 exports.getCartCount = getCartCount;

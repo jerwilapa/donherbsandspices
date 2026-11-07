@@ -22,6 +22,7 @@ import {
 
 import { useEffect, useState } from "react";
 import { getProductDescription } from "../../utils/productDescription";
+import { handleImageError } from "../../utils/image";
 
 type ProductVariant = {
     productId: number;
@@ -160,6 +161,7 @@ const ProductCard = ({
                     <Box
                         component="img"
                         src={selectedVariant.image}
+                        onError={handleImageError}
                         alt={name}
                         loading="lazy"
                         decoding="async"
@@ -350,6 +352,7 @@ const ProductCard = ({
                         <Box
                             component="img"
                             src={selectedVariant.image}
+                            onError={handleImageError}
                             alt={name}
                             loading="lazy"
                             decoding="async"

@@ -4,10 +4,11 @@ import {
   saveAddress,
   setDefaultAddress,
 } from "../controllers/addressController";
+import { verifyToken } from "../middleware/authMiddleware";
 
 const router = Router();
 
-router.get("/:userId", getSavedAddress);
-router.post("/", saveAddress);
-router.post("/set-default", setDefaultAddress);
+router.get("/", verifyToken, getSavedAddress);
+router.post("/", verifyToken, saveAddress);
+router.post("/set-default", verifyToken, setDefaultAddress);
 export default router;

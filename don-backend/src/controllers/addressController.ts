@@ -1,38 +1,42 @@
 import { Request, Response } from "express";
 import { db } from "../config/db";
+import { collection, documentId, listDocuments } from "../utils/firestore";
+
+const addressResponse = (address: Record<string, any>) => ({
+  id: address.id,
+  userId: address.user_id,
+  fullName: address.full_name,
+  phone: address.phone,
+  addressLine: address.address_line,
+  province: address.province,
+  municipality: address.municipality,
+  barangay: address.barangay,
+  postal: address.postal_code,
+  country: address.country,
+  isDefault: Boolean(address.is_default),
+});
 
 export const getSavedAddress = async (req: Request, res: Response) => {
-  const { userId } = req.params;
-
-  const [rows]: any = await db.query(
-    `SELECT * FROM user_addresses WHERE user_id = ? ORDER BY is_default DESC, created_at DESC`,
-    [userId],
-  );
-
-  const formatted = rows.map((r: any) => ({
-    id: r.id,
-    userId: r.user_id,
-
-    fullName: r.full_name,
-    phone: r.phone,
-    addressLine: r.address_line,
-
-    province: r.province,
-    municipality: r.municipality,
-    barangay: r.barangay,
-
-    postal: r.postal_code,
-    country: r.country,
-
-    isDefault: Boolean(r.is_default),
-  }));
-
-  return res.json(formatted);
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: "Unauthorized" });
+  try {
+    const addresses = await listDocuments(
+      collection("user_addresses").where("user_id", "==", userId),
+    );
+    addresses.sort(
+      (a, b) =>
+        Number(Boolean(b.is_default)) - Number(Boolean(a.is_default)) ||
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+    return res.json(addresses.map(addressResponse));
+  } catch (error) {
+    console.error("Get saved address error", error);
+    return res.status(500).json({ message: "Unable to retrieve addresses" });
+  }
 };
 
 export const saveAddress = async (req: Request, res: Response) => {
   const {
-    userId,
     fullName,
     phone,
     addressLine,
@@ -43,60 +47,82 @@ export const saveAddress = async (req: Request, res: Response) => {
     country,
     isDefault,
   } = req.body;
-
-  if (isDefault) {
-    await db.query(
-      `UPDATE user_addresses SET is_default = FALSE WHERE user_id = ?`,
-      [userId],
-    );
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: "Unauthorized" });
+  if (
+    typeof fullName !== "string" || !fullName.trim() ||
+    typeof phone !== "string" || !phone.trim() ||
+    typeof addressLine !== "string" || !addressLine.trim()
+  ) {
+    return res.status(400).json({ message: "Name, phone, and address are required." });
   }
 
-  await db.query(
-    `INSERT INTO user_addresses
-  (user_id, full_name, phone, address_line, province, municipality, barangay, postal_code, country, is_default)
-  VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [
-      userId,
-      fullName,
-      phone,
-      addressLine,
-      province,
-      municipality,
-      barangay,
-      postalCode,
-      country,
-      isDefault ? 1 : 0,
-    ],
-  );
-
-  res.json({ success: true });
+  try {
+    const addressCounter = collection("_counters").doc("user_addresses");
+    const addressesQuery = collection("user_addresses").where("user_id", "==", userId);
+    const id = await db.runTransaction(async (transaction) => {
+      const [counterSnapshot, addressSnapshot] = await Promise.all([
+        transaction.get(addressCounter),
+        isDefault ? transaction.get(addressesQuery) : Promise.resolve(null),
+      ]);
+      const nextId = Number(counterSnapshot.data()?.value || 0) + 1;
+      if (addressSnapshot) {
+        addressSnapshot.docs.forEach((snapshot) =>
+          transaction.update(snapshot.ref, { is_default: 0 }),
+        );
+      }
+      transaction.set(addressCounter, { value: nextId });
+      transaction.create(collection("user_addresses").doc(documentId(nextId)), {
+        id: nextId,
+        user_id: userId,
+        full_name: fullName.trim(),
+        phone: phone.trim(),
+        address_line: addressLine.trim(),
+        province: province || "",
+        municipality: municipality || "",
+        barangay: barangay || "",
+        postal_code: postalCode || "",
+        country: country || "Philippines",
+        is_default: isDefault ? 1 : 0,
+        created_at: new Date(),
+      });
+      return nextId;
+    });
+    return res.json({ success: true, id });
+  } catch (error) {
+    console.error("Save address error", error);
+    return res.status(500).json({ success: false, message: "Unable to save address" });
+  }
 };
 
 export const setDefaultAddress = async (req: Request, res: Response) => {
-  const { userId, addressId } = req.body;
-
-  const conn = await db.getConnection();
-
+  const userId = req.user?.id;
+  const { addressId } = req.body;
+  if (!userId) return res.status(401).json({ message: "Unauthorized" });
+  if (!Number.isInteger(Number(addressId)) || Number(addressId) <= 0) {
+    return res.status(400).json({ message: "A valid address ID is required." });
+  }
   try {
-    await conn.beginTransaction();
-
-    await conn.query(
-      `UPDATE user_addresses SET is_default = 0 WHERE user_id = ?`,
-      [userId],
-    );
-
-    await conn.query(
-      `UPDATE user_addresses SET is_default = 1 WHERE id = ? AND user_id = ?`,
-      [addressId, userId],
-    );
-
-    await conn.commit();
-
-    res.json({ success: true });
-  } catch (err) {
-    await conn.rollback();
-    res.status(500).json({ success: false, message: "Failed to set default" });
-  } finally {
-    conn.release();
+    await db.runTransaction(async (transaction) => {
+      const addresses = await transaction.get(
+        collection("user_addresses").where("user_id", "==", userId),
+      );
+      const selected = addresses.docs.find(
+        (snapshot) => Number(snapshot.data().id ?? snapshot.id) === Number(addressId),
+      );
+      if (!selected) throw new Error("ADDRESS_NOT_FOUND");
+      addresses.docs.forEach((snapshot) =>
+        transaction.update(snapshot.ref, {
+          is_default: snapshot.id === selected.id ? 1 : 0,
+        }),
+      );
+    });
+    return res.json({ success: true });
+  } catch (error) {
+    if (error instanceof Error && error.message === "ADDRESS_NOT_FOUND") {
+      return res.status(404).json({ success: false, message: "Address not found" });
+    }
+    console.error("Set default address error", error);
+    return res.status(500).json({ success: false, message: "Failed to set default" });
   }
 };

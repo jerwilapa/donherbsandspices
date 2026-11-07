@@ -2,240 +2,248 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getOrders = exports.placeOrder = void 0;
 const db_1 = require("../config/db");
+const firestore_1 = require("../utils/firestore");
 const email_1 = require("../utils/email");
 const firebase_1 = require("../utils/firebase");
-const getStatusValue = async (conn, statusCode) => {
-    try {
-        const [rows] = await conn.query("SELECT id FROM order_status WHERE code = ? OR name = ? LIMIT 1", [statusCode, statusCode]);
-        if (rows.length > 0) {
-            return rows[0].id;
-        }
-    }
-    catch (_err) {
-        // ignore missing table/column and fall back to text status
-    }
-    return statusCode;
+const shippingByMethod = {
+    lalamove: 200,
+    jnt: 150,
+    pickup: 0,
 };
-/**
- * Persist an order and its items.
- * Tables assumed to exist:
- *  - orders(id, user_id, total, status, delivery_method, created_at)
- *  - order_items(id, order_id, product_id, quantity, price)
- */
+const isDeliveryMethod = (value) => value === "lalamove" || value === "jnt" || value === "pickup";
 const placeOrder = async (req, res) => {
-    const { userId, items, address, deliveryMethod, shipping, total } = req.body;
-    if (!userId || !Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({ message: "Invalid order payload" });
+    const userId = req.user?.id;
+    const { address, deliveryMethod } = req.body;
+    if (!userId)
+        return res.status(401).json({ message: "Unauthorized" });
+    if (typeof address?.fullName !== "string" ||
+        !address.fullName.trim() ||
+        typeof address?.phone !== "string" ||
+        !address.phone.trim() ||
+        typeof address?.addressLine !== "string" ||
+        !address.addressLine.trim()) {
+        return res.status(400).json({ message: "A complete delivery address is required" });
     }
-    let conn;
+    if (!isDeliveryMethod(deliveryMethod)) {
+        return res.status(400).json({ message: "Choose a valid delivery method." });
+    }
     try {
-        conn = await db_1.db.getConnection();
-        await conn.beginTransaction();
-        // Verify cart exists
-        const [cartRows] = await conn.query("SELECT * FROM cart WHERE user_id = ?", [userId]);
-        if (cartRows.length === 0) {
-            await conn.rollback();
-            conn.release();
-            return res.status(400).json({ message: "Cart is empty" });
-        }
-        const cartId = cartRows[0].id;
-        // Load cart items with product info
-        const [cartItems] = await conn.query(`SELECT ci.product_id, ci.quantity, p.price, p.stock FROM cart_items ci JOIN products p ON p.id = ci.product_id WHERE ci.cart_id = ?`, [cartId]);
-        if (cartItems.length === 0) {
-            await conn.rollback();
-            conn.release();
-            return res.status(400).json({ message: "Cart is empty" });
-        }
-        // Check stock availability
-        for (const ci of cartItems) {
-            if (ci.quantity > ci.stock) {
-                await conn.rollback();
-                conn.release();
-                return res
-                    .status(400)
-                    .json({ message: `Product ${ci.product_id} is out of stock` });
-            }
-        }
-        // Lookup status from a status table if it exists, otherwise use literal status code.
-        const mappedStatus = await getStatusValue(conn, "placed");
-        let orderId;
-        try {
-            const [orderResult] = await conn.query("INSERT INTO orders (user_id, total, status, delivery_method) VALUES (?, ?, ?, ?)", [userId, total || 0, mappedStatus, deliveryMethod || null]);
-            orderId = orderResult.insertId;
-        }
-        catch (insertErr) {
-            // ER_BAD_FIELD_ERROR (unknown column) when delivery_method is missing
-            if (insertErr && insertErr.code === "ER_BAD_FIELD_ERROR") {
-                const [orderResult] = await conn.query("INSERT INTO orders (user_id, total, status) VALUES (?, ?, ?)", [userId, total || 0, mappedStatus]);
-                orderId = orderResult.insertId;
-            }
-            else {
-                throw insertErr;
-            }
-        }
-        // Insert order items and reduce stock
-        for (const it of items) {
-            const productId = it.productId ?? it.product_id;
-            const qty = it.quantity;
-            const found = cartItems.find((c) => c.product_id == productId);
-            const price = found ? found.price : it.price || 0;
-            await conn.query("INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)", [orderId, productId, qty, price]);
-            await conn.query("UPDATE products SET stock = stock - ? WHERE id = ?", [
-                qty,
-                productId,
+        const outcome = await db_1.db.runTransaction(async (transaction) => {
+            const cartQuery = (0, firestore_1.collection)("cart").where("user_id", "==", userId).limit(1);
+            const cartQuerySnapshot = await transaction.get(cartQuery);
+            const cartSnapshot = cartQuerySnapshot.docs[0];
+            if (!cartSnapshot)
+                throw new Error("CART_EMPTY");
+            const cart = (0, firestore_1.snapshotData)(cartSnapshot);
+            if (!cart)
+                throw new Error("CART_EMPTY");
+            const cartItemsSnapshot = await transaction.get((0, firestore_1.collection)("cart_items").where("cart_id", "==", Number(cart.id)));
+            const cartItems = cartItemsSnapshot.docs.map(firestore_1.snapshotData).filter(Boolean);
+            if (!cartItems.length)
+                throw new Error("CART_EMPTY");
+            if (cartItems.length > 200)
+                throw new Error("CART_TOO_LARGE");
+            const productRefs = cartItems.map((item) => (0, firestore_1.collection)("products").doc((0, firestore_1.documentId)(item.product_id)));
+            const productSnapshots = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
+            const products = productSnapshots.map(firestore_1.snapshotData);
+            const userRef = (0, firestore_1.collection)("users").doc((0, firestore_1.documentId)(userId));
+            const orderCounterRef = (0, firestore_1.collection)("_counters").doc("orders");
+            const [userSnapshot, counterSnapshot] = await Promise.all([
+                transaction.get(userRef),
+                transaction.get(orderCounterRef),
             ]);
-        }
-        // Clear cart
-        await conn.query("DELETE FROM cart_items WHERE cart_id = ?", [cartId]);
-        await conn.query("DELETE FROM cart WHERE id = ?", [cartId]);
-        await conn.commit();
-        conn.release();
-        try {
-            const [userRows] = await db_1.db.query("SELECT fullname, email FROM users WHERE id = ?", [userId]);
-            const customer = userRows?.[0] || {};
-            const orderItems = items.map((it) => ({
-                name: it.productName || it.name || "Product",
-                quantity: it.quantity,
-                price: it.price || 0,
-            }));
-            await (0, email_1.sendOrderPlacedEmail)({
-                recipientEmail: customer.email,
-                customerName: customer.fullname,
+            const user = (0, firestore_1.snapshotData)(userSnapshot);
+            if (!user)
+                throw new Error("USER_NOT_FOUND");
+            const orderId = Number(counterSnapshot.data()?.value || 0) + 1;
+            const orderRef = (0, firestore_1.collection)("orders").doc((0, firestore_1.documentId)(orderId));
+            const now = new Date();
+            const productById = new Map();
+            products.forEach((product) => {
+                if (product)
+                    productById.set(Number(product.id), product);
+            });
+            let subtotalCents = 0;
+            const orderItems = cartItems.map((item) => {
+                const product = productById.get(Number(item.product_id));
+                if (!product)
+                    throw new Error(`PRODUCT_NOT_FOUND:${item.product_id}`);
+                const quantity = Number(item.quantity);
+                const priceCents = Math.round(Number(product.price) * 100);
+                if (!Number.isInteger(quantity) ||
+                    quantity <= 0 ||
+                    quantity > Number(product.stock)) {
+                    throw new Error(`INSUFFICIENT_STOCK:${product.id}`);
+                }
+                if (!Number.isSafeInteger(priceCents) || priceCents < 0) {
+                    throw new Error(`INVALID_PRICE:${product.id}`);
+                }
+                subtotalCents += priceCents * quantity;
+                if (!Number.isSafeInteger(subtotalCents) || subtotalCents > 9999999999) {
+                    throw new Error("ORDER_TOTAL_LIMIT");
+                }
+                return {
+                    itemId: item.id,
+                    product_id: Number(product.id),
+                    product_name: product.name,
+                    quantity,
+                    price: priceCents / 100,
+                    stock: Number(product.stock),
+                };
+            });
+            const shippingCents = shippingByMethod[deliveryMethod] * 100;
+            if (subtotalCents + shippingCents > 9999999999) {
+                throw new Error("ORDER_TOTAL_LIMIT");
+            }
+            const total = (subtotalCents + shippingCents) / 100;
+            transaction.set(orderCounterRef, { value: orderId });
+            transaction.create(orderRef, {
+                id: orderId,
+                user_id: userId,
+                total,
+                status: "placed",
+                delivery_method: deliveryMethod,
+                created_at: now,
+            });
+            transaction.create((0, firestore_1.collection)("order_addresses").doc((0, firestore_1.documentId)(orderId)), {
+                order_id: orderId,
+                full_name: address.fullName.trim(),
+                phone: address.phone.trim(),
+                address_line: address.addressLine.trim(),
+                province: address.province || "",
+                municipality: address.municipality || "",
+                barangay: address.barangay || "",
+                postal_code: address.postal || address.postalCode || "",
+                country: address.country || "Philippines",
+            });
+            orderItems.forEach((item, index) => {
+                const productRef = productRefs[index];
+                transaction.update(productRef, { stock: item.stock - item.quantity });
+                const orderItemId = `${orderId}_${item.product_id}`;
+                transaction.create((0, firestore_1.collection)("order_items").doc(orderItemId), {
+                    id: orderItemId,
+                    order_id: orderId,
+                    product_id: item.product_id,
+                    quantity: item.quantity,
+                    price: item.price,
+                });
+                transaction.delete((0, firestore_1.collection)("cart_items").doc((0, firestore_1.documentId)(item.itemId)));
+            });
+            return {
                 orderId,
                 total,
+                customerName: user.fullname,
+                customerEmail: user.email,
+                items: orderItems.map(({ product_name, quantity, price }) => ({
+                    name: product_name,
+                    quantity,
+                    price,
+                })),
+            };
+        });
+        try {
+            await (0, email_1.sendOrderPlacedEmail)({
+                recipientEmail: outcome.customerEmail,
+                customerName: outcome.customerName,
+                orderId: outcome.orderId,
+                total: outcome.total,
                 deliveryMethod,
-                items: orderItems,
+                items: outcome.items,
             });
         }
-        catch (emailErr) {
-            console.error("Order email notification failed", emailErr);
+        catch (error) {
+            console.error("Order email notification failed", error);
         }
         try {
             await (0, firebase_1.notifyUserById)({
                 userId,
                 title: "Order placed",
-                body: `Your order #${orderId} has been placed successfully.`,
+                body: `Your order #${outcome.orderId} has been placed successfully.`,
                 data: {
                     type: "order_placed",
-                    orderId: String(orderId),
-                    total: String(total || 0),
+                    orderId: String(outcome.orderId),
+                    total: String(outcome.total),
                 },
             });
         }
-        catch (pushErr) {
-            console.error("Order push notification failed", pushErr);
+        catch (error) {
+            console.error("Order push notification failed", error);
         }
-        res.json({ message: "Order placed", orderId });
+        return res.json({
+            message: "Order placed",
+            orderId: outcome.orderId,
+            total: outcome.total,
+        });
     }
-    catch (err) {
-        // Log full error for debugging in server console
-        console.error("Order placement error:", err);
-        if (conn) {
-            try {
-                await conn.rollback();
-                conn.release();
+    catch (error) {
+        if (error instanceof Error) {
+            if (error.message === "CART_EMPTY")
+                return res.status(400).json({ message: "Cart is empty" });
+            if (error.message === "CART_TOO_LARGE") {
+                return res.status(400).json({ message: "Orders are limited to 200 distinct products." });
             }
-            catch (e) {
-                // ignore
+            if (error.message === "USER_NOT_FOUND")
+                return res.status(401).json({ message: "Account not found" });
+            if (error.message === "ORDER_TOTAL_LIMIT") {
+                return res.status(400).json({ message: "Order total exceeds the supported limit." });
+            }
+            if (error.message.startsWith("PRODUCT_NOT_FOUND:")) {
+                return res.status(400).json({ message: "A cart product is no longer available." });
+            }
+            if (error.message.startsWith("INSUFFICIENT_STOCK:")) {
+                return res.status(400).json({ message: "Insufficient stock for one or more products." });
+            }
+            if (error.message.startsWith("INVALID_PRICE:")) {
+                console.error("Invalid stored product price", error.message);
+                return res.status(500).json({ message: "Unable to place order" });
             }
         }
-        res.status(500).json({ message: "Unable to place order", error: err });
+        console.error("Order placement error", error);
+        return res.status(500).json({ message: "Unable to place order" });
     }
 };
 exports.placeOrder = placeOrder;
 const getOrders = async (req, res) => {
     const userId = req.user?.id;
-    if (!userId) {
+    if (!userId)
         return res.status(401).json({ message: "Unauthorized" });
-    }
     try {
-        let rows;
-        try {
-            const [result] = await db_1.db.query(`SELECT o.id AS orderId, o.total, o.delivery_method, o.created_at,
-                COALESCE(os.name, o.status) AS status,
-                oi.id AS order_item_id,
-                oi.product_id,
-                oi.quantity,
-                oi.price,
-                p.name AS product_name
-           FROM orders o
-           LEFT JOIN order_status os ON os.id = o.status OR os.code = o.status OR os.name = o.status
-           LEFT JOIN order_items oi ON oi.order_id = o.id
-           LEFT JOIN products p ON p.id = oi.product_id
-          WHERE o.user_id = ?
-          ORDER BY o.created_at DESC, o.id DESC`, [userId]);
-            const grouped = {};
-            for (const row of result) {
-                if (!grouped[row.orderId]) {
-                    grouped[row.orderId] = {
-                        id: row.orderId,
-                        total: row.total,
-                        delivery_method: row.delivery_method,
-                        created_at: row.created_at,
-                        status: row.status,
-                        items: [],
-                    };
-                }
-                if (row.order_item_id) {
-                    grouped[row.orderId].items.push({
-                        id: row.order_item_id,
-                        product_id: row.product_id,
-                        product_name: row.product_name,
-                        quantity: row.quantity,
-                        price: row.price,
-                    });
-                }
-            }
-            rows = Object.values(grouped);
-        }
-        catch (queryErr) {
-            if (queryErr &&
-                (queryErr.code === "ER_NO_SUCH_TABLE" ||
-                    queryErr.code === "ER_BAD_FIELD_ERROR")) {
-                const [result] = await db_1.db.query(`SELECT o.id AS orderId, o.total, o.delivery_method, o.created_at, o.status,
-                  oi.id AS order_item_id,
-                  oi.product_id,
-                  oi.quantity,
-                  oi.price,
-                  p.name AS product_name
-             FROM orders o
-             LEFT JOIN order_items oi ON oi.order_id = o.id
-             LEFT JOIN products p ON p.id = oi.product_id
-            WHERE o.user_id = ?
-            ORDER BY o.created_at DESC, o.id DESC`, [userId]);
-                const grouped = {};
-                for (const row of result) {
-                    if (!grouped[row.orderId]) {
-                        grouped[row.orderId] = {
-                            id: row.orderId,
-                            total: row.total,
-                            delivery_method: row.delivery_method,
-                            created_at: row.created_at,
-                            status: row.status,
-                            items: [],
-                        };
-                    }
-                    if (row.order_item_id) {
-                        grouped[row.orderId].items.push({
-                            id: row.order_item_id,
-                            product_id: row.product_id,
-                            product_name: row.product_name,
-                            quantity: row.quantity,
-                            price: row.price,
-                        });
-                    }
-                }
-                rows = Object.values(grouped);
-            }
-            else {
-                throw queryErr;
-            }
-        }
-        res.json(rows);
+        const [orders, statuses] = await Promise.all([
+            (0, firestore_1.listDocuments)((0, firestore_1.collection)("orders").where("user_id", "==", userId)),
+            (0, firestore_1.listDocuments)((0, firestore_1.collection)("order_status")),
+        ]);
+        orders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        const result = await Promise.all(orders.map(async (order) => {
+            const items = await (0, firestore_1.listDocuments)((0, firestore_1.collection)("order_items").where("order_id", "==", Number(order.id)));
+            const productSnapshots = items.length
+                ? await db_1.db.getAll(...items.map((item) => (0, firestore_1.collection)("products").doc((0, firestore_1.documentId)(item.product_id))))
+                : [];
+            const products = new Map(productSnapshots
+                .map(firestore_1.snapshotData)
+                .filter((product) => product !== null)
+                .map((product) => [Number(product.id), product]));
+            return {
+                id: order.id,
+                total: order.total,
+                delivery_method: order.delivery_method,
+                created_at: order.created_at,
+                status: statuses.find((entry) => entry.code === order.status ||
+                    entry.name === order.status ||
+                    Number(entry.id) === Number(order.status))?.name || order.status,
+                items: items.map((item) => ({
+                    id: item.id,
+                    product_id: item.product_id,
+                    product_name: products.get(Number(item.product_id))?.name || `Product #${item.product_id}`,
+                    quantity: item.quantity,
+                    price: item.price,
+                })),
+            };
+        }));
+        return res.json(result);
     }
-    catch (err) {
-        console.error("Get orders error:", err);
-        res.status(500).json({ message: "Unable to retrieve orders", error: err });
+    catch (error) {
+        console.error("Get orders error", error);
+        return res.status(500).json({ message: "Unable to retrieve orders" });
     }
 };
 exports.getOrders = getOrders;

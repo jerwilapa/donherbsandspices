@@ -5,8 +5,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const favoriteController_1 = require("../controllers/favoriteController");
+const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = express_1.default.Router();
-router.post("/toggle", favoriteController_1.toggleFavorite);
-router.get("/:userId", favoriteController_1.getFavoritesByUser);
+router.post("/toggle", authMiddleware_1.verifyToken, favoriteController_1.toggleFavorite);
+router.get("/", authMiddleware_1.verifyToken, favoriteController_1.getFavoritesByUser);
 exports.default = router;
 //# sourceMappingURL=favoriteRoutes.js.map

@@ -16,8 +16,8 @@ export const addToCart = (productId: number, quantity = 1) => {
 /* ========================
    GET CART
 ======================== */
-export const getCart = (userId: number) => {
-  return api.get(`/cart/${userId}`);
+export const getCart = () => {
+  return api.get("/cart");
 };
 
 /* ========================

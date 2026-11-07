@@ -5,6 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
+const helmet_1 = __importDefault(require("helmet"));
+const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
 const categoryRoutes_1 = __importDefault(require("./routes/categoryRoutes"));
 const productRoutes_1 = __importDefault(require("./routes/productRoutes"));
@@ -16,19 +18,42 @@ const adminRoutes_1 = __importDefault(require("./routes/adminRoutes"));
 const addressRoutes_1 = __importDefault(require("./routes/addressRoutes"));
 const favoriteRoutes_1 = __importDefault(require("./routes/favoriteRoutes"));
 const app = (0, express_1.default)();
-/* ========================
-   MIDDLEWARE
-======================== */
+dotenv_1.default.config();
+app.use((0, helmet_1.default)());
+const isProduction = process.env.NODE_ENV === "production";
+const configuredOrigins = process.env.CORS_ORIGINS
+    ?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+if (isProduction && !configuredOrigins?.length) {
+    throw new Error("CORS_ORIGINS must contain at least one production frontend origin.");
+}
+if (isProduction) {
+    for (const origin of configuredOrigins || []) {
+        let parsedOrigin;
+        try {
+            parsedOrigin = new URL(origin);
+        }
+        catch {
+            throw new Error(`Invalid production CORS origin: ${origin}`);
+        }
+        if (parsedOrigin.protocol !== "https:" || parsedOrigin.origin !== origin) {
+            throw new Error(`Production CORS origins must be HTTPS origins: ${origin}`);
+        }
+    }
+}
 app.use((0, cors_1.default)({
-    origin: "http://localhost:5173",
+    origin: configuredOrigins?.length
+        ? configuredOrigins
+        : ["http://localhost:5173"],
     credentials: true,
 }));
-app.use(express_1.default.json());
+app.use(express_1.default.json({ limit: "1mb" }));
 /* ========================
    STATIC FILES
 ======================== */
 const uploadsPath = path_1.default.resolve(process.cwd(), "uploads");
-app.use("/uploads", express_1.default.static(uploadsPath));
+app.use("/uploads", express_1.default.static(uploadsPath, { maxAge: "1d" }));
 /* ========================
    ROUTES
 ======================== */
@@ -41,11 +66,5 @@ app.use("/api/orders", orderRoutes_1.default);
 app.use("/api/admin", adminRoutes_1.default);
 app.use("/api/addresses", addressRoutes_1.default);
 app.use("/api/favorites", favoriteRoutes_1.default);
-/* ========================
-   DEBUG (optional)
-======================== */
-app.get("/debug-upload", (req, res) => {
-    res.sendFile(path_1.default.join(uploadsPath, "categories/basicspices.jpg"));
-});
 exports.default = app;
 //# sourceMappingURL=app.js.map

@@ -1,14 +1,15 @@
 import axios from "../api/axios";
 import { api } from "./api";
 
-export const getSavedAddress = (userId: number) =>
-  api.get(`/addresses/${userId}`);
+export const getSavedAddress = () => api.get("/addresses");
 
-export const saveAddress = (data: any) => api.post("/addresses", data);
+export const saveAddress = (data: any) => {
+  const { userId: _userId, ...address } = data;
+  return api.post("/addresses", address);
+};
 
-export const setDefaultAddress = (userId: number, addressId: number) => {
+export const setDefaultAddress = (addressId: number) => {
   return axios.post("/addresses/set-default", {
-    userId,
     addressId,
   });
 };

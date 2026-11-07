@@ -49,7 +49,7 @@ const Products = () => {
                 const user = JSON.parse(localStorage.getItem("user") || "{}");
                 if (!user?.id) return;
 
-                const res = await api.get(`/favorites/${user.id}`);
+                const res = await api.get("/favorites");
 
                 setFavorites(res.data.map((f: any) => f.product_id));
             } catch (err) {
@@ -96,7 +96,7 @@ const Products = () => {
                 setCartItems([]);
                 return;
             }
-            const res = await getCart(user.id);
+            const res = await getCart();
             setCartItems(
                 res.data.map((item: any) => ({
                     product_id: item.product_id,
@@ -126,7 +126,7 @@ const Products = () => {
         if (!user?.id) return;
 
         try {
-            const res = await toggleFavorite(user.id, productId);
+            const res = await toggleFavorite(productId);
 
             // 🔥 UPDATE UI STATE immediately
             setFavorites((prev) =>

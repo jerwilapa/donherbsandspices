@@ -9,8 +9,8 @@ const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = express_1.default.Router();
 router.post("/add", authMiddleware_1.verifyToken, cartController_1.addToCart);
 router.get("/count", authMiddleware_1.verifyToken, cartController_1.getCartCount);
-router.get("/:userId", cartController_1.getCart);
-router.put("/item/:id", cartController_1.updateCartItem);
-router.delete("/item/:id", cartController_1.removeCartItem);
+router.get("/", authMiddleware_1.verifyToken, cartController_1.getCart);
+router.put("/item/:id", authMiddleware_1.verifyToken, cartController_1.updateCartItem);
+router.delete("/item/:id", authMiddleware_1.verifyToken, cartController_1.removeCartItem);
 exports.default = router;
 //# sourceMappingURL=cartRoutes.js.map

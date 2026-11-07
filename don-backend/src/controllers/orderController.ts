@@ -1,312 +1,273 @@
 import { Request, Response } from "express";
 import { db } from "../config/db";
+import {
+  collection,
+  documentId,
+  listDocuments,
+  snapshotData,
+} from "../utils/firestore";
 import { sendOrderPlacedEmail } from "../utils/email";
 import { notifyUserById } from "../utils/firebase";
 
-const getStatusValue = async (conn: any, statusCode: string) => {
-  try {
-    const [rows]: any = await conn.query(
-      "SELECT id FROM order_status WHERE code = ? OR name = ? LIMIT 1",
-      [statusCode, statusCode],
-    );
+type DeliveryMethod = "lalamove" | "jnt" | "pickup";
 
-    if (rows.length > 0) {
-      return rows[0].id;
-    }
-  } catch (_err) {
-    // ignore missing table/column and fall back to text status
-  }
-
-  return statusCode;
+const shippingByMethod: Record<DeliveryMethod, number> = {
+  lalamove: 200,
+  jnt: 150,
+  pickup: 0,
 };
 
-/**
- * Persist an order and its items.
- * Tables assumed to exist:
- *  - orders(id, user_id, total, status, delivery_method, created_at)
- *  - order_items(id, order_id, product_id, quantity, price)
- */
-export const placeOrder = async (req: Request, res: Response) => {
-  const { userId, items, address, deliveryMethod, shipping, total } = req.body;
+const isDeliveryMethod = (value: unknown): value is DeliveryMethod =>
+  value === "lalamove" || value === "jnt" || value === "pickup";
 
-  if (!userId || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ message: "Invalid order payload" });
-  }
-  if (!address?.fullName || !address?.phone || !address?.addressLine) {
+export const placeOrder = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  const { address, deliveryMethod } = req.body;
+  if (!userId) return res.status(401).json({ message: "Unauthorized" });
+  if (
+    typeof address?.fullName !== "string" ||
+    !address.fullName.trim() ||
+    typeof address?.phone !== "string" ||
+    !address.phone.trim() ||
+    typeof address?.addressLine !== "string" ||
+    !address.addressLine.trim()
+  ) {
     return res.status(400).json({ message: "A complete delivery address is required" });
   }
-
-  let conn: any;
+  if (!isDeliveryMethod(deliveryMethod)) {
+    return res.status(400).json({ message: "Choose a valid delivery method." });
+  }
 
   try {
-    conn = await db.getConnection();
-    await conn.beginTransaction();
+    const outcome = await db.runTransaction(async (transaction) => {
+      const cartQuery = collection("cart").where("user_id", "==", userId).limit(1);
+      const cartQuerySnapshot = await transaction.get(cartQuery);
+      const cartSnapshot = cartQuerySnapshot.docs[0];
+      if (!cartSnapshot) throw new Error("CART_EMPTY");
+      const cart = snapshotData(cartSnapshot);
+      if (!cart) throw new Error("CART_EMPTY");
 
-    // Verify cart exists
-    const [cartRows]: any = await conn.query(
-      "SELECT * FROM cart WHERE user_id = ?",
-      [userId],
-    );
-    if (cartRows.length === 0) {
-      await conn.rollback();
-      conn.release();
-      return res.status(400).json({ message: "Cart is empty" });
-    }
-
-    const cartId = cartRows[0].id;
-
-    // Load cart items with product info
-    const [cartItems]: any = await conn.query(
-      `SELECT ci.product_id, ci.quantity, p.price, p.stock FROM cart_items ci JOIN products p ON p.id = ci.product_id WHERE ci.cart_id = ?`,
-      [cartId],
-    );
-
-    if (cartItems.length === 0) {
-      await conn.rollback();
-      conn.release();
-      return res.status(400).json({ message: "Cart is empty" });
-    }
-
-    // Check stock availability
-    for (const ci of cartItems) {
-      if (ci.quantity > ci.stock) {
-        await conn.rollback();
-        conn.release();
-        return res
-          .status(400)
-          .json({ message: `Product ${ci.product_id} is out of stock` });
-      }
-    }
-
-    // Lookup status from a status table if it exists, otherwise use literal status code.
-    const mappedStatus = await getStatusValue(conn, "placed");
-
-    let orderId: number;
-    try {
-      const [orderResult]: any = await conn.query(
-        "INSERT INTO orders (user_id, total, status, delivery_method) VALUES (?, ?, ?, ?)",
-        [userId, total || 0, mappedStatus, deliveryMethod || null],
+      const cartItemsSnapshot = await transaction.get(
+        collection("cart_items").where("cart_id", "==", Number(cart.id)),
       );
-      orderId = orderResult.insertId;
-    } catch (insertErr: any) {
-      // ER_BAD_FIELD_ERROR (unknown column) when delivery_method is missing
-      if (insertErr && insertErr.code === "ER_BAD_FIELD_ERROR") {
-        const [orderResult]: any = await conn.query(
-          "INSERT INTO orders (user_id, total, status) VALUES (?, ?, ?)",
-          [userId, total || 0, mappedStatus],
-        );
-        orderId = orderResult.insertId;
-      } else {
-        throw insertErr;
-      }
-    }
+      const cartItems = cartItemsSnapshot.docs.map(snapshotData).filter(Boolean);
+      if (!cartItems.length) throw new Error("CART_EMPTY");
+      if (cartItems.length > 200) throw new Error("CART_TOO_LARGE");
 
-    await conn.query(
-      `INSERT INTO order_addresses
-        (order_id, full_name, phone, address_line, province, municipality, barangay, postal_code, country)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        orderId,
-        address.fullName,
-        address.phone,
-        address.addressLine,
-        address.province || "",
-        address.municipality || "",
-        address.barangay || "",
-        address.postal || address.postalCode || "",
-        address.country || "Philippines",
-      ],
-    );
-
-    // Insert order items and reduce stock
-    for (const it of items) {
-      const productId = it.productId ?? it.product_id;
-      const qty = it.quantity;
-
-      const found = cartItems.find((c: any) => c.product_id == productId);
-      const price = found ? found.price : it.price || 0;
-
-      await conn.query(
-        "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)",
-        [orderId, productId, qty, price],
+      const productRefs = cartItems.map((item) =>
+        collection("products").doc(documentId(item!.product_id)),
       );
-
-      await conn.query("UPDATE products SET stock = stock - ? WHERE id = ?", [
-        qty,
-        productId,
+      const productSnapshots = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
+      const products = productSnapshots.map(snapshotData);
+      const userRef = collection("users").doc(documentId(userId));
+      const orderCounterRef = collection("_counters").doc("orders");
+      const [userSnapshot, counterSnapshot] = await Promise.all([
+        transaction.get(userRef),
+        transaction.get(orderCounterRef),
       ]);
-    }
+      const user = snapshotData(userSnapshot);
+      if (!user) throw new Error("USER_NOT_FOUND");
+      const orderId = Number(counterSnapshot.data()?.value || 0) + 1;
+      const orderRef = collection("orders").doc(documentId(orderId));
+      const now = new Date();
+      const productById = new Map<number, NonNullable<typeof products[number]>>();
+      products.forEach((product) => {
+        if (product) productById.set(Number(product.id), product);
+      });
 
-    // Clear cart
-    await conn.query("DELETE FROM cart_items WHERE cart_id = ?", [cartId]);
-    await conn.query("DELETE FROM cart WHERE id = ?", [cartId]);
+      let subtotalCents = 0;
+      const orderItems = cartItems.map((item) => {
+        const product = productById.get(Number(item!.product_id));
+        if (!product) throw new Error(`PRODUCT_NOT_FOUND:${item!.product_id}`);
+        const quantity = Number(item!.quantity);
+        const priceCents = Math.round(Number(product.price) * 100);
+        if (
+          !Number.isInteger(quantity) ||
+          quantity <= 0 ||
+          quantity > Number(product.stock)
+        ) {
+          throw new Error(`INSUFFICIENT_STOCK:${product.id}`);
+        }
+        if (!Number.isSafeInteger(priceCents) || priceCents < 0) {
+          throw new Error(`INVALID_PRICE:${product.id}`);
+        }
+        subtotalCents += priceCents * quantity;
+        if (!Number.isSafeInteger(subtotalCents) || subtotalCents > 9_999_999_999) {
+          throw new Error("ORDER_TOTAL_LIMIT");
+        }
+        return {
+          itemId: item!.id,
+          product_id: Number(product.id),
+          product_name: product.name,
+          quantity,
+          price: priceCents / 100,
+          stock: Number(product.stock),
+        };
+      });
 
-    await conn.commit();
-    conn.release();
+      const shippingCents = shippingByMethod[deliveryMethod] * 100;
+      if (subtotalCents + shippingCents > 9_999_999_999) {
+        throw new Error("ORDER_TOTAL_LIMIT");
+      }
+      const total = (subtotalCents + shippingCents) / 100;
+      transaction.set(orderCounterRef, { value: orderId });
+      transaction.create(orderRef, {
+        id: orderId,
+        user_id: userId,
+        total,
+        status: "placed",
+        delivery_method: deliveryMethod,
+        created_at: now,
+      });
+      transaction.create(collection("order_addresses").doc(documentId(orderId)), {
+        order_id: orderId,
+        full_name: address.fullName.trim(),
+        phone: address.phone.trim(),
+        address_line: address.addressLine.trim(),
+        province: address.province || "",
+        municipality: address.municipality || "",
+        barangay: address.barangay || "",
+        postal_code: address.postal || address.postalCode || "",
+        country: address.country || "Philippines",
+      });
 
-    try {
-      const [userRows]: any = await db.query(
-        "SELECT fullname, email FROM users WHERE id = ?",
-        [userId],
-      );
+      orderItems.forEach((item, index) => {
+        const productRef = productRefs[index]!;
+        transaction.update(productRef, { stock: item.stock - item.quantity });
+        const orderItemId = `${orderId}_${item.product_id}`;
+        transaction.create(collection("order_items").doc(orderItemId), {
+          id: orderItemId,
+          order_id: orderId,
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price: item.price,
+        });
+        transaction.delete(collection("cart_items").doc(documentId(item.itemId)));
+      });
 
-      const customer = userRows?.[0] || {};
-      const orderItems = items.map((it: any) => ({
-        name: it.productName || it.name || "Product",
-        quantity: it.quantity,
-        price: it.price || 0,
-      }));
-
-      await sendOrderPlacedEmail({
-        recipientEmail: customer.email,
-        customerName: customer.fullname,
+      return {
         orderId,
         total,
+        customerName: user.fullname,
+        customerEmail: user.email,
+        items: orderItems.map(({ product_name, quantity, price }) => ({
+          name: product_name,
+          quantity,
+          price,
+        })),
+      };
+    });
+
+    try {
+      await sendOrderPlacedEmail({
+        recipientEmail: outcome.customerEmail,
+        customerName: outcome.customerName,
+        orderId: outcome.orderId,
+        total: outcome.total,
         deliveryMethod,
-        items: orderItems,
+        items: outcome.items,
       });
-    } catch (emailErr) {
-      console.error("Order email notification failed", emailErr);
+    } catch (error) {
+      console.error("Order email notification failed", error);
     }
 
     try {
       await notifyUserById({
         userId,
         title: "Order placed",
-        body: `Your order #${orderId} has been placed successfully.`,
+        body: `Your order #${outcome.orderId} has been placed successfully.`,
         data: {
           type: "order_placed",
-          orderId: String(orderId),
-          total: String(total || 0),
+          orderId: String(outcome.orderId),
+          total: String(outcome.total),
         },
       });
-    } catch (pushErr) {
-      console.error("Order push notification failed", pushErr);
+    } catch (error) {
+      console.error("Order push notification failed", error);
     }
 
-    res.json({ message: "Order placed", orderId });
-  } catch (err) {
-    // Log full error for debugging in server console
-    console.error("Order placement error:", err);
-    if (conn) {
-      try {
-        await conn.rollback();
-        conn.release();
-      } catch (e) {
-        // ignore
+    return res.json({
+      message: "Order placed",
+      orderId: outcome.orderId,
+      total: outcome.total,
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "CART_EMPTY") return res.status(400).json({ message: "Cart is empty" });
+      if (error.message === "CART_TOO_LARGE") {
+        return res.status(400).json({ message: "Orders are limited to 200 distinct products." });
+      }
+      if (error.message === "USER_NOT_FOUND") return res.status(401).json({ message: "Account not found" });
+      if (error.message === "ORDER_TOTAL_LIMIT") {
+        return res.status(400).json({ message: "Order total exceeds the supported limit." });
+      }
+      if (error.message.startsWith("PRODUCT_NOT_FOUND:")) {
+        return res.status(400).json({ message: "A cart product is no longer available." });
+      }
+      if (error.message.startsWith("INSUFFICIENT_STOCK:")) {
+        return res.status(400).json({ message: "Insufficient stock for one or more products." });
+      }
+      if (error.message.startsWith("INVALID_PRICE:")) {
+        console.error("Invalid stored product price", error.message);
+        return res.status(500).json({ message: "Unable to place order" });
       }
     }
-    res.status(500).json({ message: "Unable to place order", error: err });
+    console.error("Order placement error", error);
+    return res.status(500).json({ message: "Unable to place order" });
   }
 };
 
-export const getOrders = async (req: any, res: Response) => {
+export const getOrders = async (req: Request, res: Response) => {
   const userId = req.user?.id;
-
-  if (!userId) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
+  if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
   try {
-    let rows: any;
-
-    try {
-      const [result]: any = await db.query(
-        `SELECT o.id AS orderId, o.total, o.delivery_method, o.created_at,
-                COALESCE(os.name, o.status) AS status,
-                oi.id AS order_item_id,
-                oi.product_id,
-                oi.quantity,
-                oi.price,
-                p.name AS product_name
-           FROM orders o
-           LEFT JOIN order_status os ON os.id = o.status OR os.code = o.status OR os.name = o.status
-           LEFT JOIN order_items oi ON oi.order_id = o.id
-           LEFT JOIN products p ON p.id = oi.product_id
-          WHERE o.user_id = ?
-          ORDER BY o.created_at DESC, o.id DESC`,
-        [userId],
-      );
-
-      const grouped: Record<string, any> = {};
-      for (const row of result) {
-        if (!grouped[row.orderId]) {
-          grouped[row.orderId] = {
-            id: row.orderId,
-            total: row.total,
-            delivery_method: row.delivery_method,
-            created_at: row.created_at,
-            status: row.status,
-            items: [],
-          };
-        }
-
-        if (row.order_item_id) {
-          grouped[row.orderId].items.push({
-            id: row.order_item_id,
-            product_id: row.product_id,
-            product_name: row.product_name,
-            quantity: row.quantity,
-            price: row.price,
-          });
-        }
-      }
-
-      rows = Object.values(grouped);
-    } catch (queryErr: any) {
-      if (
-        queryErr &&
-        (queryErr.code === "ER_NO_SUCH_TABLE" ||
-          queryErr.code === "ER_BAD_FIELD_ERROR")
-      ) {
-        const [result]: any = await db.query(
-          `SELECT o.id AS orderId, o.total, o.delivery_method, o.created_at, o.status,
-                  oi.id AS order_item_id,
-                  oi.product_id,
-                  oi.quantity,
-                  oi.price,
-                  p.name AS product_name
-             FROM orders o
-             LEFT JOIN order_items oi ON oi.order_id = o.id
-             LEFT JOIN products p ON p.id = oi.product_id
-            WHERE o.user_id = ?
-            ORDER BY o.created_at DESC, o.id DESC`,
-          [userId],
+    const [orders, statuses] = await Promise.all([
+      listDocuments(collection("orders").where("user_id", "==", userId)),
+      listDocuments(collection("order_status")),
+    ]);
+    orders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const result = await Promise.all(
+      orders.map(async (order) => {
+        const items = await listDocuments(
+          collection("order_items").where("order_id", "==", Number(order.id)),
         );
-
-        const grouped: Record<string, any> = {};
-        for (const row of result) {
-          if (!grouped[row.orderId]) {
-            grouped[row.orderId] = {
-              id: row.orderId,
-              total: row.total,
-              delivery_method: row.delivery_method,
-              created_at: row.created_at,
-              status: row.status,
-              items: [],
-            };
-          }
-
-          if (row.order_item_id) {
-            grouped[row.orderId].items.push({
-              id: row.order_item_id,
-              product_id: row.product_id,
-              product_name: row.product_name,
-              quantity: row.quantity,
-              price: row.price,
-            });
-          }
-        }
-
-        rows = Object.values(grouped);
-      } else {
-        throw queryErr;
-      }
-    }
-
-    res.json(rows);
-  } catch (err) {
-    console.error("Get orders error:", err);
-    res.status(500).json({ message: "Unable to retrieve orders", error: err });
+        const productSnapshots = items.length
+          ? await db.getAll(
+              ...items.map((item) => collection("products").doc(documentId(item.product_id))),
+            )
+          : [];
+        const products = new Map(
+          productSnapshots
+            .map(snapshotData)
+            .filter((product): product is NonNullable<typeof product> => product !== null)
+            .map((product) => [Number(product.id), product]),
+        );
+        return {
+          id: order.id,
+          total: order.total,
+          delivery_method: order.delivery_method,
+          created_at: order.created_at,
+          status:
+            statuses.find(
+              (entry) =>
+                entry.code === order.status ||
+                entry.name === order.status ||
+                Number(entry.id) === Number(order.status),
+            )?.name || order.status,
+          items: items.map((item) => ({
+            id: item.id,
+            product_id: item.product_id,
+            product_name: products.get(Number(item.product_id))?.name || `Product #${item.product_id}`,
+            quantity: item.quantity,
+            price: item.price,
+          })),
+        };
+      }),
+    );
+    return res.json(result);
+  } catch (error) {
+    console.error("Get orders error", error);
+    return res.status(500).json({ message: "Unable to retrieve orders" });
   }
 };

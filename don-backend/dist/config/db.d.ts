@@ -1,3 +1,2 @@
-import mysql from "mysql2/promise";
-export declare const db: mysql.Pool;
+export declare const db: FirebaseFirestore.Firestore;
 //# sourceMappingURL=db.d.ts.map

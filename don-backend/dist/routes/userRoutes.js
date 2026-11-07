@@ -5,21 +5,26 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
-const db_1 = require("../config/db");
+const firestore_1 = require("../utils/firestore");
 const authController_1 = require("../controllers/authController");
 const router = express_1.default.Router();
 router.get("/me", authMiddleware_1.verifyToken, async (req, res) => {
     try {
-        const [rows] = await db_1.db.query("SELECT id, fullname, email, role FROM users WHERE id = ?", [req.user.id]);
-        if (!rows.length) {
+        const user = await (0, firestore_1.getDocument)("users", req.user.id);
+        if (!user)
             return res.status(404).json({ message: "User not found" });
-        }
-        res.json({
-            user: rows[0],
+        return res.json({
+            user: {
+                id: user.id,
+                fullname: user.fullname,
+                email: user.email,
+                role: user.role,
+            },
         });
     }
-    catch (err) {
-        res.status(500).json({ message: "Server error" });
+    catch (error) {
+        console.error("Get current user error", error);
+        return res.status(500).json({ message: "Unable to retrieve account" });
     }
 });
 router.post("/me/fcm-token", authMiddleware_1.verifyToken, authController_1.saveFcmToken);

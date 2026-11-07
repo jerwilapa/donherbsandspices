@@ -1,8 +1,7 @@
 import { api } from "./api";
 
-export const toggleFavorite = async (userId: number, productId: number) => {
+export const toggleFavorite = async (productId: number) => {
   const { data } = await api.post("/favorites/toggle", {
-    userId,
     productId,
   });
 

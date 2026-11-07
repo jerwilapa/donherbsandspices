@@ -1,4 +1,5 @@
 import { Card, Typography, Box } from "@mui/material";
+import { handleImageError } from "../../utils/image";
 
 type Props = {
     title: string;
@@ -41,6 +42,7 @@ const CategoryCard = ({
             <Box
                 component="img"
                 src={image}
+                onError={handleImageError}
                 alt={title}
                 loading="lazy"
                 decoding="async"

@@ -1,50 +1,50 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getProductsByCategory = exports.getProducts = void 0;
-const db_1 = require("../config/db");
-// GET ALL PRODUCTS (with category name)
-const getProducts = async (req, res) => {
+const firestore_1 = require("../utils/firestore");
+const productImage_1 = require("../utils/productImage");
+const productsWithCategory = async (categoryId) => {
+    const productQuery = categoryId
+        ? (0, firestore_1.collection)("products").where("category_id", "==", Number(categoryId))
+        : (0, firestore_1.collection)("products");
+    const [products, categories] = await Promise.all([
+        (0, firestore_1.listDocuments)(productQuery),
+        (0, firestore_1.listDocuments)((0, firestore_1.collection)("categories")),
+    ]);
+    const categoryNames = new Map(categories.map((category) => [Number(category.id), category.name]));
+    return products
+        .map((product) => ({
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        image: (0, productImage_1.resolveProductImage)(product.name, product.image),
+        category: categoryNames.get(Number(product.category_id)) || null,
+        category_id: product.category_id,
+        stock: product.stock,
+    }))
+        .sort((a, b) => Number(b.id) - Number(a.id));
+};
+const getProducts = async (_req, res) => {
     try {
-        const [rows] = await db_1.db.query(`
-      SELECT 
-        p.id,
-        p.name,
-        p.price,
-        p.image,
-        c.name AS category,
-        p.category_id,
-        p.stock
-      FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id
-      ORDER BY p.id DESC
-    `);
-        res.json(rows);
+        return res.json(await productsWithCategory());
     }
     catch (error) {
-        res.status(500).json({ message: "Error fetching products" });
+        console.error("Fetch products error", error);
+        return res.status(500).json({ message: "Error fetching products" });
     }
 };
 exports.getProducts = getProducts;
 const getProductsByCategory = async (req, res) => {
     try {
-        const { categoryId } = req.params;
-        const [rows] = await db_1.db.query(`
-      SELECT 
-        p.id,
-        p.name,
-        p.price,
-        p.image,
-        p.stock,
-        c.name AS category
-      FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.category_id = ?
-      ORDER BY p.id DESC
-      `, [categoryId]);
-        res.json(rows);
+        const categoryId = Number(req.params.categoryId);
+        if (!Number.isSafeInteger(categoryId) || categoryId <= 0) {
+            return res.status(400).json({ message: "A valid category ID is required." });
+        }
+        return res.json(await productsWithCategory(String(categoryId)));
     }
     catch (error) {
-        res.status(500).json({ message: "Error filtering products" });
+        console.error("Filter products error", error);
+        return res.status(500).json({ message: "Error filtering products" });
     }
 };
 exports.getProductsByCategory = getProductsByCategory;
